@@ -1,8 +1,11 @@
 """Tests for the subfield problem and allied problems. """
+from __future__ import annotations
 
-from sympy.core.numbers import (AlgebraicNumber, I, Rational)
+from sympy.core.numbers import (AlgebraicNumber, I, pi, Rational)
 from sympy.core.singleton import S
+from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.miscellaneous import sqrt
+from sympy.external.gmpy import MPQ
 from sympy.polys.numberfields.subfield import (
     is_isomorphism_possible,
     field_isomorphism_pslq,
@@ -10,8 +13,10 @@ from sympy.polys.numberfields.subfield import (
     primitive_element,
     to_number_field,
 )
+from sympy.polys.domains import QQ
 from sympy.polys.polyerrors import IsomorphismFailed
 from sympy.polys.polytools import Poly
+from sympy.polys.rootoftools import CRootOf
 from sympy.testing.pytest import raises
 
 from sympy.abc import x
@@ -269,6 +274,11 @@ def test_primitive_element():
     a, b = I*sqrt(2*sqrt(2) + 3), I*sqrt(-2*sqrt(2) + 3)
     assert primitive_element([a, b, I], x) == (x**4 + 6*x**2 + 1, [1, 0, 0])
 
+    assert primitive_element([sqrt(2), 0], x) == (x**2 - 2, [1, 0])
+    assert primitive_element([0, sqrt(2)], x) == (x**2 - 2, [1, 1])
+    assert primitive_element([sqrt(2), 0], x, ex=True) == (x**2 - 2, [1, 0], [[MPQ(1,1), MPQ(0,1)], []])
+    assert primitive_element([0, sqrt(2)], x, ex=True) == (x**2 - 2, [1, 1], [[], [MPQ(1,1), MPQ(0,1)]])
+
 
 def test_to_number_field():
     assert to_number_field(sqrt(2)) == AlgebraicNumber(sqrt(2))
@@ -287,3 +297,22 @@ def test_issue_22561():
     a = to_number_field(sqrt(2), sqrt(2) + sqrt(3))
     b = to_number_field(sqrt(2), sqrt(2) + sqrt(5))
     assert field_isomorphism(a, b) == [1, 0]
+
+
+def test_issue_22736():
+    a = CRootOf(x**4 + x**3 + x**2 + x + 1, -1)
+    a._reset()
+    b = exp(2*I*pi/5)
+    assert field_isomorphism(a, b) == [1, 0]
+
+
+def test_issue_27798():
+    # https://github.com/sympy/sympy/issues/27798
+    a, b = CRootOf(49*x**3 - 49*x**2 + 14*x - 1, 2), CRootOf(49*x**3 - 49*x**2 + 14*x - 1, 0)
+    assert primitive_element([a, b], polys=True)[0].primitive()[0] == 1
+    assert primitive_element([a, b], polys=True, ex=True)[0].primitive()[0] == 1
+
+    f1, f2 = QQ.algebraic_field(a), QQ.algebraic_field(b)
+    f3 = f1.unify(f2)
+    assert f3.mod.primitive()[0] == 1
+    assert Poly(x, x, domain=f1) + Poly(x, x, domain=f2) == Poly(2*x, x, domain=f3)

@@ -1,7 +1,7 @@
 """
 General binary relations.
 """
-from typing import Optional
+from __future__ import annotations
 
 from sympy.core.singleton import S
 from sympy.assumptions import AppliedPredicate, ask, Predicate, Q  # type: ignore
@@ -74,12 +74,12 @@ class BinaryRelation(Predicate):
     .. [1] https://en.wikipedia.org/wiki/Reflexive_relation
     """
 
-    is_reflexive: Optional[bool] = None
-    is_symmetric: Optional[bool] = None
+    is_reflexive: bool | None = None
+    is_symmetric: bool | None = None
 
     def __call__(self, *args):
         if not len(args) == 2:
-            raise ValueError("Binary relation takes two arguments, but got %s." % len(args))
+            raise TypeError(f"Q.{self.name} takes two arguments, but got {len(args)}.")
         return AppliedBinaryRelation(self, *args)
 
     @property
@@ -95,7 +95,7 @@ class BinaryRelation(Predicate):
     def _compare_reflexive(self, lhs, rhs):
         # quick exit for structurally same arguments
         # do not check != here because it cannot catch the
-        # equivalent arguements with different structures.
+        # equivalent arguments with different structures.
 
         # reflexivity does not hold to NaN
         if lhs is S.NaN or rhs is S.NaN:
@@ -208,5 +208,5 @@ class AppliedBinaryRelation(AppliedPredicate):
     def __bool__(self):
         ret = ask(self)
         if ret is None:
-            raise TypeError("Cannot determine truth value of %s" % self)
+            raise TypeError(f"Cannot determine truth value of {self}")
         return ret

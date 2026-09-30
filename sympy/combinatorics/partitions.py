@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core import Basic, Dict, sympify, Tuple
 from sympy.core.numbers import Integer
 from sympy.core.sorting import default_sort_key
@@ -40,7 +41,7 @@ class Partition(FiniteSet):
 
         Creating Partition from Python lists:
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3])
         >>> a
         Partition({3}, {1, 2})
@@ -100,7 +101,7 @@ class Partition(FiniteSet):
         ========
 
         >>> from sympy import default_sort_key
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> from sympy.abc import x
         >>> a = Partition([1, 2])
         >>> b = Partition([3, 4])
@@ -124,14 +125,14 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> Partition([1], [2, 3]).partition
         [[1], [2, 3]]
         """
         if self._partition is None:
             self._partition = sorted([sorted(p, key=default_sort_key)
                                       for p in self.args])
-        return self._partition
+        return [part[:] for part in self._partition]
 
     def __add__(self, other):
         """
@@ -141,7 +142,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3])
         >>> a.rank
         1
@@ -165,7 +166,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3])
         >>> a.rank
         1
@@ -184,7 +185,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3, 4, 5])
         >>> b = Partition([1], [2, 3], [4], [5])
         >>> a.rank, b.rank
@@ -203,7 +204,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3, 4, 5])
         >>> b = Partition([1], [2, 3], [4], [5])
         >>> a.rank, b.rank
@@ -221,7 +222,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3], [4, 5])
         >>> a.rank
         13
@@ -247,7 +248,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> a = Partition([1, 2], [3], [4, 5])
         >>> a.members
         (1, 2, 3, 4, 5)
@@ -283,7 +284,7 @@ class Partition(FiniteSet):
         Examples
         ========
 
-        >>> from sympy.combinatorics.partitions import Partition
+        >>> from sympy.combinatorics import Partition
         >>> Partition.from_rgs([0, 1, 2, 0, 1], list('abcde'))
         Partition({c}, {a, d}, {b, e})
         >>> Partition.from_rgs([0, 1, 2, 0, 1], list('cbead'))
@@ -296,10 +297,8 @@ class Partition(FiniteSet):
             raise ValueError('mismatch in rgs and element lengths')
         max_elem = max(rgs) + 1
         partition = [[] for i in range(max_elem)]
-        j = 0
-        for i in rgs:
+        for j, i in enumerate(rgs):
             partition[i].append(elements[j])
-            j += 1
         if not all(p for p in partition):
             raise ValueError('some blocks of the partition were empty.')
         return Partition(*partition)
@@ -340,8 +339,8 @@ class IntegerPartition(Basic):
         """
         Generates a new IntegerPartition object from a list or dictionary.
 
-        Explantion
-        ==========
+        Explanation
+        ===========
 
         The partition can be given as a list of positive integers or a
         dictionary of (integer, multiplicity) items. If the partition is
@@ -373,7 +372,7 @@ class IntegerPartition(Basic):
             integer, partition = partition, integer
         if isinstance(partition, (dict, Dict)):
             _ = []
-            for k, v in sorted(list(partition.items()), reverse=True):
+            for k, v in sorted(partition.items(), reverse=True):
                 if not v:
                     continue
                 k, v = as_int(k), as_int(v)
@@ -501,7 +500,7 @@ class IntegerPartition(Basic):
             groups = group(self.partition, multiple=False)
             self._keys = [g[0] for g in groups]
             self._dict = dict(groups)
-        return self._dict
+        return self._dict.copy()
 
     @property
     def conjugate(self):
@@ -638,7 +637,7 @@ def RGS_generalized(m):
     [203,   0,   0,  0,  0, 0, 0]])
     """
     d = zeros(m + 1)
-    for i in range(0, m + 1):
+    for i in range(m + 1):
         d[0, i] = 1
 
     for i in range(1, m + 1):
@@ -659,7 +658,7 @@ def RGS_enum(m):
     ========
 
     >>> from sympy.combinatorics.partitions import RGS_enum
-    >>> from sympy.combinatorics.partitions import Partition
+    >>> from sympy.combinatorics import Partition
     >>> RGS_enum(4)
     15
     >>> RGS_enum(5)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.add import Add
 from sympy.core.containers import Tuple
 from sympy.core.expr import Expr
@@ -166,7 +167,7 @@ class Tr(Expr):
         expr_kind = expr.kind
         return expr_kind.element_kind
 
-    def doit(self, **kwargs):
+    def doit(self, **hints):
         """ Perform the trace operation.
 
         #TODO: Current version ignores the indices set for partial trace.

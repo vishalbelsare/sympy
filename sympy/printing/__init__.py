@@ -1,4 +1,5 @@
 """Printing subsystem"""
+from __future__ import annotations
 
 from .pretty import pager_print, pretty, pretty_print, pprint, pprint_use_unicode, pprint_try_use_unicode
 
@@ -12,7 +13,9 @@ from .pycode import pycode
 
 from .codeprinter import print_ccode, print_fcode
 
-from .codeprinter import ccode, fcode, cxxcode # noqa:F811
+from .codeprinter import ccode, fcode, cxxcode, rust_code # noqa:F811
+
+from .smtlib import smtlib_code
 
 from .glsl import glsl_code, print_glsl
 
@@ -25,8 +28,6 @@ from .julia import julia_code
 from .mathematica import mathematica_code
 
 from .octave import octave_code
-
-from .rust import rust_code
 
 from .gtk import print_gtk
 
@@ -62,7 +63,10 @@ __all__ = [
     'pycode',
 
     # sympy.printing.codeprinter
-    'ccode', 'print_ccode', 'cxxcode', 'fcode', 'print_fcode',
+    'ccode', 'print_ccode', 'cxxcode', 'fcode', 'print_fcode', 'rust_code',
+
+    # sympy.printing.smtlib
+    'smtlib_code',
 
     # sympy.printing.glsl
     'glsl_code', 'print_glsl',
@@ -81,9 +85,6 @@ __all__ = [
 
     # sympy.printing.octave
     'octave_code',
-
-    # sympy.printing.rust
-    'rust_code',
 
     # sympy.printing.gtk
     'print_gtk',

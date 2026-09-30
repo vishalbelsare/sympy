@@ -1,3 +1,4 @@
+from __future__ import annotations
 from collections.abc import Iterable
 from functools import singledispatch
 
@@ -17,7 +18,7 @@ class TensorProduct(Expr):
     def __new__(cls, *args, **kwargs):
         from sympy.tensor.array import NDimArray, tensorproduct, Array
         from sympy.matrices.expressions.matexpr import MatrixExpr
-        from sympy.matrices.matrices import MatrixBase
+        from sympy.matrices.matrixbase import MatrixBase
         from sympy.strategies import flatten
 
         args = [sympify(arg) for arg in args]
@@ -89,14 +90,14 @@ def shape(expr):
 
     This function returns the shape of any object representing matrix or array.
 
-    >>> from sympy import shape, Array, Matrix, Integral
+    >>> from sympy import shape, Array, ImmutableDenseMatrix, Integral
     >>> from sympy.abc import x
     >>> A = Array([1, 2])
     >>> shape(A)
     (2,)
     >>> shape(Integral(A, x))
     (2,)
-    >>> M = Matrix([1, 2])
+    >>> M = ImmutableDenseMatrix([1, 2])
     >>> shape(M)
     (2, 1)
     >>> shape(Integral(M, x))
@@ -132,7 +133,7 @@ def shape(expr):
     if hasattr(expr, "shape"):
         return expr.shape
     raise NoShapeError(
-        "%s does not have shape, or its type is not registered to shape()." % expr)
+        f"{expr} does not have shape, or its type is not registered to shape().")
 
 
 class NoShapeError(Exception):

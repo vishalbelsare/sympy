@@ -5,11 +5,10 @@ Added kelvin, candela and mole.
 
 """
 
-from typing import List
+from __future__ import annotations
 
 from sympy.physics.units import DimensionSystem, Dimension, dHg0
 
-from sympy.physics.units.quantities import Quantity
 
 from sympy.core.numbers import (Rational, pi)
 from sympy.core.singleton import S
@@ -25,8 +24,8 @@ from sympy.physics.units.definitions import (
     coulomb, volt, ohm, siemens, farad, henry, tesla, weber, dioptre, lux,
     katal, gray, becquerel, inch, liter, julian_year, gravitational_constant,
     speed_of_light, elementary_charge, planck, hbar, electronvolt,
-    avogadro_number, avogadro_constant, boltzmann_constant,
-    stefan_boltzmann_constant, atomic_mass_constant, molar_gas_constant,
+    avogadro_number, avogadro_constant, boltzmann_constant, electron_rest_mass,
+    stefan_boltzmann_constant, Da, atomic_mass_constant, molar_gas_constant,
     faraday_constant, josephson_constant, von_klitzing_constant,
     acceleration_due_to_gravity, magnetic_constant, vacuum_permittivity,
     vacuum_impedance, coulomb_constant, atmosphere, bar, pound, psi, mmHg,
@@ -42,6 +41,10 @@ from sympy.physics.units.definitions import (
 )
 from sympy.physics.units.prefixes import PREFIXES, prefix_unit
 from sympy.physics.units.systems.mksa import MKSA, dimsys_MKSA
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sympy.physics.units.quantities import Quantity
 
 derived_dims = (frequency, force, pressure, energy, power, charge, voltage,
                 capacitance, conductance, magnetic_flux,
@@ -52,10 +55,11 @@ units = [mol, cd, K, lux, hertz, newton, pascal, joule, watt, coulomb, volt,
         farad, ohm, siemens, weber, tesla, henry, candela, lux, becquerel,
         gray, katal]
 
-all_units = []  # type: List[Quantity]
+all_units: list[Quantity] = []
 for u in units:
     all_units.extend(prefix_unit(u, PREFIXES))
 
+all_units.extend(units)
 all_units.extend([mol, cd, K, lux])
 
 
@@ -71,7 +75,29 @@ dimsys_default = dimsys_SI.extend(
     [information],
 )
 
-SI = MKSA.extend(base=(mol, cd, K), units=all_units, name='SI', dimension_system=dimsys_SI)
+SI = MKSA.extend(base=(mol, cd, K), units=all_units, name='SI', dimension_system=dimsys_SI, derived_units={
+    power: watt,
+    magnetic_flux: weber,
+    time: second,
+    impedance: ohm,
+    pressure: pascal,
+    current: ampere,
+    voltage: volt,
+    length: meter,
+    frequency: hertz,
+    inductance: henry,
+    temperature: kelvin,
+    amount_of_substance: mole,
+    luminous_intensity: candela,
+    conductance: siemens,
+    mass: kilogram,
+    magnetic_density: tesla,
+    charge: coulomb,
+    force: newton,
+    capacitance: farad,
+    energy: joule,
+    velocity: meter/second,
+})
 
 One = S.One
 
@@ -179,12 +205,18 @@ SI.set_quantity_scale_factor(faraday_constant, elementary_charge * avogadro_cons
 # Josephson constant
 
 SI.set_quantity_dimension(josephson_constant, frequency / voltage)
-SI.set_quantity_scale_factor(josephson_constant, 0.5 * planck / elementary_charge)
+# The Josephson constant is K_J = 2*e/h (frequency per voltage).  The previous
+# value ``0.5*planck/elementary_charge`` was h/(2e), the magnetic flux quantum,
+# i.e. its reciprocal (and its dimension is voltage*time, not frequency/voltage).
+SI.set_quantity_scale_factor(josephson_constant, 2 * elementary_charge / planck)
 
 # Von Klitzing constant
 
 SI.set_quantity_dimension(von_klitzing_constant, voltage / current)
-SI.set_quantity_scale_factor(von_klitzing_constant, hbar / elementary_charge ** 2)
+# The von Klitzing constant is R_K = h/e**2.  The previous value used the
+# reduced Planck constant ``hbar`` instead of ``planck``, making it too small by
+# a factor of 2*pi.
+SI.set_quantity_scale_factor(von_klitzing_constant, planck / elementary_charge ** 2)
 
 # Acceleration due to gravity (on the Earth surface)
 
@@ -205,6 +237,10 @@ SI.set_quantity_scale_factor(vacuum_permittivity, 1/(u0 * c**2))
 
 SI.set_quantity_dimension(vacuum_impedance, impedance)
 SI.set_quantity_scale_factor(vacuum_impedance, u0 * c)
+
+# Electron rest mass
+SI.set_quantity_dimension(electron_rest_mass, mass)
+SI.set_quantity_scale_factor(electron_rest_mass, 9.1093837015e-31*kilogram)
 
 # Coulomb's constant:
 SI.set_quantity_dimension(coulomb_constant, force * length ** 2 / charge ** 2)
@@ -304,17 +340,23 @@ SI.set_quantity_scale_factor(rutherford, 1000000*becquerel)
 
 
 # check that scale factors are the right SI dimensions:
-for _scale_factor, _dimension in zip(
-    SI._quantity_scale_factors.values(),
-    SI._quantity_dimension_map.values()
-):
+# ``equivalent_dims`` is an instance method, so it must be called on the
+# dimension system.  Pairing is done by quantity rather than by zipping the two
+# dicts' values, which would silently mismatch scale factors and dimensions if
+# the dicts had different keys or ordering.  (In practice the guard ``dimex !=
+# 1`` only fires for a symbolically-expressed scale factor: the built-in
+# quantities store a plain numeric scale factor, whose dimensional expression is
+# 1, so this loop is a no-op for them.)
+_dimension_system = SI.get_dimension_system()
+for _quantity, _scale_factor in SI._quantity_scale_factors.items():
+    _dimension = SI._quantity_dimension_map.get(_quantity)
+    if _dimension is None:
+        continue
     dimex = SI.get_dimensional_expr(_scale_factor)
     if dimex != 1:
-        # XXX: equivalent_dims is an instance method taking two arguments in
-        # addition to self so this can not work:
-        if not DimensionSystem.equivalent_dims(_dimension, Dimension(dimex)):  # type: ignore
+        if not _dimension_system.equivalent_dims(_dimension, Dimension(dimex)):
             raise ValueError("quantity value and dimension mismatch")
-del _scale_factor, _dimension
+del _dimension_system, _quantity, _scale_factor, _dimension
 
 __all__ = [
     'mmHg', 'atmosphere', 'inductance', 'newton', 'meter',
@@ -336,12 +378,12 @@ __all__ = [
     'capacitance', 'tesla', 'steradian', 'planck_mass', 'josephson_constant',
     'planck_area', 'stefan_boltzmann_constant', 'base_dims',
     'astronomical_unit', 'radian', 'planck_voltage', 'impedance',
-    'planck_energy', 'atomic_mass_constant', 'rutherford', 'second', 'inch',
+    'planck_energy', 'Da', 'atomic_mass_constant', 'rutherford', 'second', 'inch',
     'elementary_charge', 'SI', 'electronvolt', 'dimsys_SI', 'henry',
     'planck_angular_frequency', 'ohm', 'pound', 'planck_pressure', 'G', 'psi',
     'dHg0', 'von_klitzing_constant', 'planck_length', 'avogadro_number',
     'mole', 'acceleration', 'information', 'planck_energy_density',
-    'mebibyte', 's', 'acceleration_due_to_gravity',
+    'mebibyte', 's', 'acceleration_due_to_gravity', 'electron_rest_mass',
     'planck_temperature', 'units', 'mass', 'dimsys_MKSA', 'kelvin', 'kPa',
     'boltzmann', 'milli_mass_unit', 'planck_impedance', 'electric_constant',
     'derived_dims', 'kg', 'coulomb', 'siemens', 'byte', 'magnetic_flux',

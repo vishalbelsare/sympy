@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sympy.assumptions.refine import refine
 from sympy.concrete.summations import Sum
 from sympy.core.add import Add
@@ -5,11 +7,11 @@ from sympy.core.basic import Basic
 from sympy.core.containers import Tuple
 from sympy.core.expr import (ExprBuilder, unchanged, Expr,
     UnevaluatedExpr)
-from sympy.core.function import (Function, expand, WildFunction,
-    AppliedUndef, Derivative, diff)
-from sympy.core.mul import Mul
+from sympy.core.function import (Function, DefinedFunction, expand, WildFunction,
+    AppliedUndef, Derivative, diff, Subs)
+from sympy.core.mul import Mul, _unevaluated_Mul
 from sympy.core.numbers import (NumberSymbol, E, zoo, oo, Float, I,
-    Rational, nan, Integer, Number, pi)
+    Rational, nan, Integer, Number, pi, _illegal)
 from sympy.core.power import Pow
 from sympy.core.relational import Ge, Lt, Gt, Le
 from sympy.core.singleton import S
@@ -18,6 +20,7 @@ from sympy.core.symbol import Symbol, symbols, Dummy, Wild
 from sympy.core.sympify import sympify
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.exponential import exp_polar, exp, log
+from sympy.functions.elementary.hyperbolic import sinh, tanh
 from sympy.functions.elementary.miscellaneous import sqrt, Max
 from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import tan, sin, cos
@@ -31,6 +34,7 @@ from sympy.polys.partfrac import apart
 from sympy.polys.polytools import factor, cancel, Poly
 from sympy.polys.rationaltools import together
 from sympy.series.order import O
+from sympy.sets.sets import FiniteSet
 from sympy.simplify.combsimp import combsimp
 from sympy.simplify.gammasimp import gammasimp
 from sympy.simplify.powsimp import powsimp
@@ -38,9 +42,12 @@ from sympy.simplify.radsimp import collect, radsimp
 from sympy.simplify.ratsimp import ratsimp
 from sympy.simplify.simplify import simplify, nsimplify
 from sympy.simplify.trigsimp import trigsimp
+from sympy.tensor.indexed import Indexed
 from sympy.physics.units import meter
 
-from sympy.testing.pytest import raises, XFAIL
+import pytest
+import sys
+from sympy.testing.pytest import raises, slow, XFAIL
 
 from sympy.abc import a, b, c, n, t, u, x, y, z
 
@@ -60,6 +67,8 @@ class DummyNumber:
     then one needs to make sure that the class works with Python integers and
     with itself.
     """
+
+    number: int | float
 
     def __radd__(self, a):
         if isinstance(a, (int, float)):
@@ -477,14 +486,16 @@ def test_as_leading_term():
     # https://github.com/sympy/sympy/issues/21177
     e = -3*x + (x + Rational(3, 2) - sqrt(3)*S.ImaginaryUnit/2)**2\
         - Rational(3, 2) + 3*sqrt(3)*S.ImaginaryUnit/2
-    assert e.as_leading_term(x) == \
-        (12*sqrt(3)*x - 12*S.ImaginaryUnit*x)/(4*sqrt(3) + 12*S.ImaginaryUnit)
+    assert e.as_leading_term(x) == -sqrt(3)*I*x
 
     # https://github.com/sympy/sympy/issues/21245
     e = 1 - x - x**2
     d = (1 + sqrt(5))/2
     assert e.subs(x, y + 1/d).as_leading_term(y) == \
-        (-576*sqrt(5)*y - 1280*y)/(256*sqrt(5) + 576)
+        (-40*y - 16*sqrt(5)*y)/(16 + 8*sqrt(5))
+
+    # https://github.com/sympy/sympy/issues/26991
+    assert sinh(tanh(3/(100*x))).as_leading_term(x, cdir = 1) == sinh(1)
 
 
 def test_leadterm2():
@@ -516,7 +527,7 @@ def test_as_leading_term4():
 
 
 def test_as_leading_term_stub():
-    class foo(Function):
+    class foo(DefinedFunction):
         pass
     assert foo(1/x).as_leading_term(x) == foo(1/x)
     assert foo(1).as_leading_term(x) == foo(1)
@@ -652,10 +663,11 @@ def test_is_rational_function():
     assert (sin(y)/x).is_rational_function(x) is True
     assert (sin(y)/x).is_rational_function(x, y) is False
 
-    assert (S.NaN).is_rational_function() is False
-    assert (S.Infinity).is_rational_function() is False
-    assert (S.NegativeInfinity).is_rational_function() is False
-    assert (S.ComplexInfinity).is_rational_function() is False
+    for i in _illegal:
+        assert not i.is_rational_function()
+        for d in (1, x):
+            assert not (i/d).is_rational_function()
+
 
 def test_is_meromorphic():
     f = a/x**2 + b + x + c*x**2
@@ -827,6 +839,10 @@ def test_as_numer_denom():
     assert ((A*B*C)**-1).as_numer_denom() == ((A*B*C)**-1, 1)
     assert ((A*B*C)**-1/x).as_numer_denom() == ((A*B*C)**-1, x)
 
+    # the following morphs from Add to Mul during processing
+    assert Add(0, (x + y)/z/-2, evaluate=False).as_numer_denom(
+        ) == (-x - y, 2*z)
+
 
 def test_trunc():
     import math
@@ -843,6 +859,14 @@ def test_trunc():
     raises(TypeError, lambda: math.trunc(x))
     raises(TypeError, lambda: math.trunc(x + y**2))
     raises(TypeError, lambda: math.trunc(oo))
+
+
+class CustomAdd(Add):
+    pass
+
+
+class CustomMul(Mul):
+    pass
 
 
 def test_as_independent():
@@ -901,6 +925,22 @@ def test_as_independent():
     assert eq.as_independent(x) == (-6, Mul(x, 1/x, evaluate=False))
 
     assert (x*y).as_independent(z, as_Add=True) == (x*y, 0)
+
+    # subclassing Add and Mul
+    eq = CustomAdd(y, CustomMul(x, y), z)
+    ind, dep = eq.as_independent(x)
+    assert ind - (y + z) == 0
+    assert isinstance(ind, CustomAdd)
+    assert dep/(x*y) == 1
+    assert isinstance(dep, CustomMul)
+
+    eq = CustomMul(y, CustomAdd(x, y), z)
+    ind, dep = eq.as_independent(x)
+    assert ind/(y*z) == 1
+    assert isinstance(ind, CustomMul)
+    assert dep - (x + y) == 0
+    assert isinstance(dep, CustomAdd)
+
 
 @XFAIL
 def test_call_2():
@@ -969,6 +1009,15 @@ def test_replace():
     assert S.Zero.replace(Wild('x'), 1) == 1
     # let the user override the default decision of False
     assert S.Zero.replace(Wild('x'), 1, exact=True) == 0
+
+
+def test_replace_integral():
+    # https://github.com/sympy/sympy/issues/27142
+    q, p, s, t = symbols('q p s t', cls=Wild)
+    a, b, c, d = symbols('a b c d')
+    i = Integral(a + b, (b, c, d))
+    pattern = Integral(q, (p, s, t))
+    assert i.replace(pattern, q) == a + b
 
 
 def test_find():
@@ -1046,6 +1095,10 @@ def test_has_basics():
     assert (2*p).has(Wild)
 
     assert not x.has()
+
+    # see issue at https://github.com/sympy/sympy/issues/5190
+    assert not S(1).has(Wild)
+    assert not x.has(Wild)
 
 
 def test_has_multiple():
@@ -1173,6 +1226,7 @@ def test_as_poly_as_expr():
     # https://github.com/sympy/sympy/issues/20610
     assert S(2).as_poly() is None
     assert sqrt(2).as_poly(extension=True) is None
+    assert pi.as_poly(x, domain='QQ') is None
 
     raises(AttributeError, lambda: Tuple(x, x).as_poly(x))
     raises(AttributeError, lambda: Tuple(x ** 2, x, y).as_poly(x))
@@ -1316,6 +1370,7 @@ def test_extractions():
     assert (2*x + 3).extract_additively(2*x) == 3
     assert x.extract_additively(0) == x
     assert S(2).extract_additively(x) is None
+    assert S(2.).extract_additively(2.) is S.Zero
     assert S(2.).extract_additively(2) is S.Zero
     assert S(2*x + 3).extract_additively(x + 1) == x + 2
     assert S(2*x + 3).extract_additively(y + 1) is None
@@ -1334,6 +1389,9 @@ def test_extractions():
         x + y + (x + 1)*(x + y) + 3
     assert ((y + 1)*(x + 2*y + 1) + 3).extract_additively(y + 1) == \
         (x + 2*y)*(y + 1) + 3
+    assert (-x - x*I).extract_additively(-x) == -I*x
+    # extraction does not leave artificats, now
+    assert (4*x*(y + 1) + y).extract_additively(x) == x*(4*y + 3) + y
 
     n = Symbol("n", integer=True)
     assert (Integer(-3)).could_extract_minus_sign() is True
@@ -1348,7 +1406,7 @@ def test_extractions():
     assert ((x + x*y)/y).could_extract_minus_sign() is False
     assert ((-x - y)/(x + y)).could_extract_minus_sign() is False
 
-    class sign_invariant(Function, Expr):
+    class sign_invariant(DefinedFunction, Expr):
         nargs = 1
         def __neg__(self):
             return self
@@ -1363,7 +1421,7 @@ def test_extractions():
     assert (1 - sqrt(2)).could_extract_minus_sign() is False
     # check that result is canonical
     eq = (3*x + 15*y).extract_multiplicatively(3)
-    assert eq.args == eq.func(*eq.args).args
+    assert eq is not None and eq.args == eq.func(*eq.args).args
 
 
 def test_nan_extractions():
@@ -1392,7 +1450,7 @@ def test_coeff():
     assert (10*x).coeff(x, 0) == 0
     assert (10*x).coeff(10*x, 0) == 0
 
-    n1, n2 = symbols('n1 n2', commutative=False)
+    n1, n2 = symbols('n1 n2', commutative=False, seq=True)
     assert (n1*n2).coeff(n1) == 1
     assert (n1*n2).coeff(n2) == n1
     assert (n1*n2 + x*n1).coeff(n1) == 1  # 1*n1*(n2+x)
@@ -1488,6 +1546,8 @@ def test_as_base_exp():
     assert (x*y*z).as_base_exp() == (x*y*z, S.One)
     assert (x + y + z).as_base_exp() == (x + y + z, S.One)
     assert ((x + y)**z).as_base_exp() == (x + y, z)
+    assert (x**2*y**2).as_base_exp() == (x*y, 2)
+    assert (x**z*y**z).as_base_exp() == (x**z*y**z, S.One)
 
 
 def test_issue_4963():
@@ -1541,6 +1601,11 @@ def test_as_coefficients_dict():
     assert [(3.0*x*y).as_coefficients_dict()[i] for i in check] == \
         [0, 0, 0, 3.0, 0]
     assert (3.0*x*y).as_coefficients_dict()[3.0*x*y] == 0
+    eq = x*(x + 1)*a + x*b + c/x
+    assert eq.as_coefficients_dict(x) == {x: b, 1/x: c,
+        x*(x + 1): a}
+    assert eq.expand().as_coefficients_dict(x) == {x**2: a, x: a + b, 1/x: c}
+    assert x.as_coefficients_dict() == {x: S.One}
 
 
 def test_args_cnc():
@@ -1567,12 +1632,14 @@ def test_args_cnc():
 def test_new_rawargs():
     n = Symbol('n', commutative=False)
     a = x + n
+    assert isinstance(a, Add)
     assert a.is_commutative is False
     assert a._new_rawargs(x).is_commutative
     assert a._new_rawargs(x, y).is_commutative
     assert a._new_rawargs(x, n).is_commutative is False
     assert a._new_rawargs(x, y, n).is_commutative is False
     m = x*n
+    assert isinstance(m, Mul)
     assert m.is_commutative is False
     assert m._new_rawargs(x).is_commutative
     assert m._new_rawargs(n).is_commutative is False
@@ -1610,11 +1677,30 @@ def test_has_free():
     assert Integral(f(x), (f(x), 1, y)).has_free(y)
     assert not Integral(f(x), (f(x), 1, y)).has_free(x)
     assert not Integral(f(x), (f(x), 1, y)).has_free(f(x))
+    # simple extraction
+    assert (x + 1 + y).has_free(x + 1)
+    assert not (x + 2 + y).has_free(x + 1)
+    assert (2 + 3*x*y).has_free(3*x)
+    raises(TypeError, lambda: x.has_free({x, y}))
+    s = FiniteSet(1, 2)
+    assert Piecewise((s, x > 3), (4, True)).has_free(s)
+    assert not Piecewise((1, x > 3), (4, True)).has_free(s)
+    # can't make set of these, but fallback will handle
+    raises(TypeError, lambda: x.has_free(y, []))
+
+
+def test_has_xfree():
+    assert (x + 1).has_xfree({x})
+    assert ((x + 1)**2).has_xfree({x + 1})
+    assert not (x + y + 1).has_xfree({x + 1})
+    raises(TypeError, lambda: x.has_xfree(x))
+    raises(TypeError, lambda: x.has_xfree([x]))
 
 
 def test_issue_5300():
     x = Symbol('x', commutative=False)
     assert x*sqrt(2)/sqrt(6) == x*sqrt(3)/3
+
 
 def test_floordiv():
     from sympy.functions.elementary.integers import floor
@@ -1625,6 +1711,7 @@ def test_as_coeff_Mul():
     assert Integer(3).as_coeff_Mul() == (Integer(3), Integer(1))
     assert Rational(3, 4).as_coeff_Mul() == (Rational(3, 4), Integer(1))
     assert Float(5.0).as_coeff_Mul() == (Float(5.0), Integer(1))
+    assert Float(0.0).as_coeff_Mul() == (Float(0.0), Integer(1))
 
     assert (Integer(3)*x).as_coeff_Mul() == (Integer(3), x)
     assert (Rational(3, 4)*x).as_coeff_Mul() == (Rational(3, 4), x)
@@ -1699,6 +1786,8 @@ def test_expr_sorting():
     a, b = exprs = [Dummy('x'), Dummy('x')]
     assert sorted([b, a], key=default_sort_key) == exprs
 
+    exprs = [f(nan), f(-1), f(1)]
+    assert sorted(exprs, key=default_sort_key) == exprs
 
 def test_as_ordered_factors():
 
@@ -1711,7 +1800,7 @@ def test_as_ordered_factors():
 
     assert expr.as_ordered_factors() == args
 
-    A, B = symbols('A,B', commutative=False)
+    A, B = symbols('A,B', commutative=False, seq=True)
 
     assert (A*B).as_ordered_factors() == [A, B]
     assert (B*A).as_ordered_factors() == [B, A]
@@ -1747,8 +1836,8 @@ def test_as_ordered_terms():
     assert e.as_ordered_terms(order="rev-lex") == [2, y, x*y**4, x**2*y**2]
     assert e.as_ordered_terms(order="rev-grlex") == [2, y, x**2*y**2, x*y**4]
 
-    k = symbols('k')
-    assert k.as_ordered_terms(data=True) == ([(k, ((1.0, 0.0), (1,), ()))], [k])
+    k = Symbol('k')
+    assert k.as_ordered_terms(data=True) == ([(k, ((1.0, 0.0), (1,), ()))], [k]) # type: ignore
 
 
 def test_sort_key_atomic_expr():
@@ -1909,6 +1998,7 @@ def test_random():
     assert Piecewise((Max(x, y), z))._random() is None
 
 
+@slow
 def test_round():
     assert str(Float('0.1249999').round(2)) == '0.12'
     d20 = 12345678901234567890
@@ -1932,12 +2022,12 @@ def test_round():
     assert n.round(-1) == 12340
 
     r = Float(str(n)).round(-4)
-    assert r == 10000
+    assert r == 10000.0
 
     assert n.round(-5) == 0
 
     assert str((pi + sqrt(2)).round(2)) == '4.56'
-    assert (10*(pi + sqrt(2))).round(-1) == 50
+    assert (10*(pi + sqrt(2))).round(-1) == 50.0
     raises(TypeError, lambda: round(x + 2, 2))
     assert str(S(2.3).round(1)) == '2.3'
     # rounding in SymPy (as in Decimal) should be
@@ -1955,7 +2045,7 @@ def test_round():
             n = '-' + n
         v = str(Float(n).round(p))[:j]  # pertinent digits
         if v.endswith('.'):
-          continue  # it ends with 0 which is even
+            continue  # it ends with 0 which is even
         L = int(v[-1])  # last digit
         assert L % 2 == 0, (n, '->', v)
 
@@ -1969,12 +2059,27 @@ def test_round():
 
     assert S.Zero.round() == 0
 
-    a = (Add(1, Float('1.' + '9'*27, ''), evaluate=0))
-    assert a.round(10) == Float('3.0000000000', '')
-    assert a.round(25) == Float('3.0000000000000000000000000', '')
-    assert a.round(26) == Float('3.00000000000000000000000000', '')
+    a = (Add(1, Float('1.' + '9'*27, ''), evaluate=False))
+    assert a.round(10) == Float('3.000000000000000000000000000', '')
+    assert a.round(25) == Float('3.000000000000000000000000000', '')
+    assert a.round(26) == Float('3.000000000000000000000000000', '')
     assert a.round(27) == Float('2.999999999999999999999999999', '')
     assert a.round(30) == Float('2.999999999999999999999999999', '')
+    #assert a.round(10) == Float('3.0000000000', '')
+    #assert a.round(25) == Float('3.0000000000000000000000000', '')
+    #assert a.round(26) == Float('3.00000000000000000000000000', '')
+    #assert a.round(27) == Float('2.999999999999999999999999999', '')
+    #assert a.round(30) == Float('2.999999999999999999999999999', '')
+
+    # XXX: Should round set the precision of the result?
+    #      The previous version of the tests above is this but they only pass
+    #      because Floats with unequal precision compare equal:
+    #
+    # assert a.round(10) == Float('3.0000000000', '')
+    # assert a.round(25) == Float('3.0000000000000000000000000', '')
+    # assert a.round(26) == Float('3.00000000000000000000000000', '')
+    # assert a.round(27) == Float('2.999999999999999999999999999', '')
+    # assert a.round(30) == Float('2.999999999999999999999999999', '')
 
     raises(TypeError, lambda: x.round())
     raises(TypeError, lambda: f(1).round())
@@ -2028,6 +2133,31 @@ def test_round():
         assert S(i).round().is_Integer
         assert type(round(fi)) is int
         assert S(fi).round().is_Integer
+
+        # issue 25698
+        n = 6000002
+        assert int(n*(log(n) + log(log(n)))) == 110130079
+        one = cos(2)**2 + sin(2)**2
+        eq = exp(one*I*pi)
+        qr, qi = eq.as_real_imag()
+        assert qi.round(2) == 0.0
+        assert eq.round(2) == -1.0
+        eq = one - 1/S(10**120)
+        assert S.true not in (eq > 1, eq < 1)
+        assert int(eq) == int(.9) == 0
+        assert int(-eq) == int(-.9) == 0
+
+    # https://github.com/sympy/sympy/issues/28279
+    phi = (1+sqrt(5))/2
+    def a(n):
+        return int(2**n *log(phi)/log(10)-Rational(1, 2)*log(5)/log(10))+1
+
+    a857 = int("200829212952178927690909380949249948846461002549293765663931"
+               "695493228490311245625332991209824760595495085562557651697891"
+               "081559764342218116754386067315347927714197626480253219546461"
+               "109143700506913638072400645037349873738547576011048498684505"
+               "520181585966267100")
+    assert a(857) == a857
 
 
 def test_held_expression_UnevaluatedExpr():
@@ -2140,6 +2270,12 @@ def test_issue_11877():
     assert integrate(log(S.Half - x), (x, 0, S.Half)) == Rational(-1, 2) -log(2)/2
 
 
+@pytest.mark.parametrize('expr', [I / 3, I / 200])
+def test_issue_28221(expr):
+    with pytest.raises(TypeError, match="Cannot convert non-comparable expression to int"):
+        int(expr)
+
+
 def test_normal():
     x = symbols('x')
     e = Mul(S.Half, 1 + x, evaluate=False)
@@ -2155,6 +2291,21 @@ def test_ExprBuilder():
     eb = ExprBuilder(Mul)
     eb.args.extend([x, x])
     assert eb.build() == x**2
+
+    # append_argument should call the validator without raising a TypeError:
+    validated = []
+    eb = ExprBuilder(Mul, [x], validator=lambda *args: validated.append(args))
+    eb.append_argument(x)
+    assert eb.args == [x, x]
+    assert validated[-1] == (x, x)
+    assert eb.build() == x**2
+
+    # search_element should recurse into nested ExprBuilder arguments:
+    inner = ExprBuilder(Mul, [y])
+    outer = ExprBuilder(Mul, [x, inner])
+    assert outer.search_element(x) == (0,)
+    assert outer.search_element(y) == (1, 0)
+    assert outer.search_element(z) is None
 
 
 def test_issue_22020():
@@ -2188,9 +2339,47 @@ def test_non_string_equality():
 
 def test_21494():
     from sympy.testing.pytest import warns_deprecated_sympy
+
     with warns_deprecated_sympy():
         assert x.expr_free_symbols == {x}
+
+    with warns_deprecated_sympy():
+        assert Basic().expr_free_symbols == set()
+
+    with warns_deprecated_sympy():
+        assert S(2).expr_free_symbols == {S(2)}
+
+    with warns_deprecated_sympy():
+        assert Indexed("A", x).expr_free_symbols == {Indexed("A", x)}
+
+    with warns_deprecated_sympy():
+        assert Subs(x, x, 0).expr_free_symbols == set()
 
 
 def test_Expr__eq__iterable_handling():
     assert x != range(3)
+
+@pytest.mark.skipif(
+        sys.version_info < (3, 12),
+        reason = "Format works for Python version >= 3.12"
+)
+def test_format():
+    assert '{:1.2f}'.format(S.Zero) == '0.00'
+    assert '{:+3.0f}'.format(S(3)) == ' +3'
+    assert '{:23.20f}'.format(pi) == ' 3.14159265358979323846'
+    assert '{:50.48f}'.format(exp(sin(1))) == '2.319776824715853173956590377503266813254904772376'
+
+
+def test_issue_24045():
+    assert powsimp(exp(a)/((c*a - c*b)*(Float(1.0)*c*a - Float(1.0)*c*b)))  # doesn't raise
+
+
+def test__unevaluated_Mul():
+    A, B = symbols('A B', commutative=False)
+    assert _unevaluated_Mul(x, A, B, S(2), A).args == (2, x, A, B, A)
+    assert _unevaluated_Mul(-x*A*B, S(2), A).args == (-2, x, A, B, A)
+
+
+def test_Float_zero_division_error():
+    # issue 27165
+    assert Float('1.7567e-1417').round(15) == Float(0)

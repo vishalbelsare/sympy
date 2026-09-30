@@ -13,9 +13,9 @@ sympy.stats.frv
 sympy.stats.rv_interface
 """
 
-
+from __future__ import annotations
 from functools import singledispatch
-from typing import Tuple as tTuple
+from math import prod
 
 from sympy.core.add import Add
 from sympy.core.basic import Basic
@@ -23,7 +23,7 @@ from sympy.core.containers import Tuple
 from sympy.core.expr import Expr
 from sympy.core.function import (Function, Lambda)
 from sympy.core.logic import fuzzy_and
-from sympy.core.mul import (Mul, prod)
+from sympy.core.mul import Mul
 from sympy.core.relational import (Eq, Ne)
 from sympy.core.singleton import S
 from sympy.core.symbol import (Dummy, Symbol)
@@ -39,23 +39,27 @@ from sympy.core.sympify import _sympify
 from sympy.sets.sets import FiniteSet, ProductSet, Intersection
 from sympy.solvers.solveset import solveset
 from sympy.external import import_module
-from sympy.utilities.misc import filldedent
 from sympy.utilities.decorator import doctest_depends_on
-from sympy.utilities.exceptions import SymPyDeprecationWarning
+from sympy.utilities.exceptions import sympy_deprecation_warning
 from sympy.utilities.iterables import iterable
-import warnings
+
+
+__doctest_requires__ = {('sample',): ['scipy']}
 
 
 x = Symbol('x')
+
 
 @singledispatch
 def is_random(x):
     return False
 
+
 @is_random.register(Basic)
 def _(x):
     atoms = x.free_symbols
     return any(is_random(i) for i in atoms)
+
 
 class RandomDomain(Basic):
     """
@@ -192,10 +196,10 @@ class PSpace(Basic):
     sympy.stats.frv.FinitePSpace
     """
 
-    is_Finite = None  # type: bool
-    is_Continuous = None  # type: bool
-    is_Discrete = None  # type: bool
-    is_real = None  # type: bool
+    is_Finite: bool | None = None  # Fails test if not set to None
+    is_Continuous: bool | None = None  # Fails test if not set to None
+    is_Discrete: bool | None = None  # Fails test if not set to None
+    is_real: bool | None
 
     @property
     def domain(self):
@@ -280,7 +284,7 @@ class RandomSymbol(Expr):
 
     An object of the RandomSymbol type should almost never be created by the
     user. They tend to be created instead by the PSpace class's value method.
-    Traditionally a user doesn't even do this but instead calls one of the
+    Traditionally a user does not even do this but instead calls one of the
     convenience functions Normal, Exponential, Coin, Die, FiniteRV, etc....
     """
 
@@ -841,11 +845,6 @@ def probability(condition, given_condition=None, numsamples=None,
     from sympy.stats.symbolic_probability import Probability
     if evaluate:
         return Probability(condition, given_condition).doit(**kwargs)
-    ### TODO: Remove the user warnings in the future releases
-    message = ("Since version 1.7, using `evaluate=False` returns `Probability` "
-              "object. If you want unevaluated Integral/Sum use "
-              "`P(condition, given_condition, evaluate=False).rewrite(Integral)`")
-    warnings.warn(filldedent(message))
     return Probability(condition, given_condition)
 
 
@@ -1085,21 +1084,27 @@ def sample(expr, condition=None, size=(), library='scipy',
     library : str
         - 'scipy' : Sample using scipy
         - 'numpy' : Sample using numpy
-        - 'pymc3' : Sample using PyMC3
+        - 'pymc'  : Sample using PyMC
 
         Choose any of the available options to sample from as string,
         by default is 'scipy'
     numsamples : int
-        Number of samples, each with size as ``size``. The ``numsamples`` parameter is
-        deprecated and is only provided for compatibility with v1.8. Use a list comprehension
-        or an additional dimension in ``size`` instead.
+        Number of samples, each with size as ``size``.
+
+        .. deprecated:: 1.9
+
+        The ``numsamples`` parameter is deprecated and is only provided for
+        compatibility with v1.8. Use a list comprehension or an additional
+        dimension in ``size`` instead. See
+        :ref:`deprecated-sympy-stats-numsamples` for details.
+
     seed :
         An object to be used as seed by the given external library for sampling `expr`.
         Following is the list of possible types of object for the supported libraries,
 
         - 'scipy': int, numpy.random.RandomState, numpy.random.Generator
         - 'numpy': int, numpy.random.RandomState, numpy.random.Generator
-        - 'pymc3': int
+        - 'pymc': int
 
         Optional, by default None, in which case seed settings
         related to the given library will be used.
@@ -1164,12 +1169,20 @@ def sample(expr, condition=None, size=(), library='scipy',
                                                         numsamples=numsamples, seed=seed)
 
     if numsamples != 1:
-        SymPyDeprecationWarning(
-                 feature="numsamples parameter",
-                 issue=21723,
-                 deprecated_since_version="1.9",
-                 useinstead="a list comprehension or an additional dimension in ``size``").warn()
+        sympy_deprecation_warning(
+            f"""
+            The numsamples parameter to sympy.stats.sample() is deprecated.
+            Either use a list comprehension, like
 
+            [sample(...) for i in range({numsamples})]
+
+            or add a dimension to size, like
+
+            sample(..., size={(numsamples,) + size})
+            """,
+            deprecated_since_version="1.9",
+            active_deprecations_target="deprecated-sympy-stats-numsamples",
+        )
         return [next(iterator) for i in range(numsamples)]
 
     return next(iterator)
@@ -1185,8 +1198,8 @@ def quantile(expr, evaluate=True, **kwargs):
     Quantile is defined as the value at which the probability of the random
     variable is less than or equal to the given probability.
 
-    ..math::
-        Q(p) = inf{x \in (-\infty, \infty) such that p <= F(x)}
+    .. math::
+        Q(p) = \inf\{x \in (-\infty, \infty) : p \le F(x)\}
 
     Examples
     ========
@@ -1247,7 +1260,7 @@ def sample_iter(expr, condition=None, size=(), library='scipy',
 
         - 'scipy': int, numpy.random.RandomState, numpy.random.Generator
         - 'numpy': int, numpy.random.RandomState, numpy.random.Generator
-        - 'pymc3': int
+        - 'pymc': int
 
         Optional, by default None, in which case seed settings
         related to the given library will be used.
@@ -1298,16 +1311,16 @@ def sample_iter(expr, condition=None, size=(), library='scipy',
         expr = expr.subs(sub)
 
     def fn_subs(*args):
-        return expr.subs({rv: arg for rv, arg in zip(rvs, args)})
+        return expr.subs(dict(zip(rvs, args)))
 
     def given_fn_subs(*args):
         if condition is not None:
-            return condition.subs({rv: arg for rv, arg in zip(rvs, args)})
+            return condition.subs(dict(zip(rvs, args)))
         return False
 
-    if library == 'pymc3':
-        # Currently unable to lambdify in pymc3
-        # TODO : Remove 'pymc3' when lambdify accepts 'pymc3' as module
+    if library in ('pymc', 'pymc3'):
+        # Currently unable to lambdify in pymc
+        # TODO : Remove when lambdify accepts 'pymc' as module
         fn = lambdify(rvs, expr, **kwargs)
     else:
         fn = lambdify(rvs, expr, modules=library, **kwargs)
@@ -1439,7 +1452,7 @@ def sampling_E(expr, given_condition=None, library='scipy', numsamples=1,
     """
     samples = list(sample_iter(expr, given_condition, library=library,
                           numsamples=numsamples, seed=seed, **kwargs))
-    result = Add(*[samp for samp in samples]) / numsamples
+    result = Add(*samples) / numsamples
 
     if evalf:
         return result.evalf()
@@ -1571,7 +1584,7 @@ def rv_subs(expr, symbols=None):
 
 
 class NamedArgsMixin:
-    _argnames = ()  # type: tTuple[str, ...]
+    _argnames: tuple[str, ...] = ()
 
     def __getattr__(self, attr):
         try:
@@ -1587,7 +1600,7 @@ class Distribution(Basic):
         """ A random realization from the distribution """
 
         module = import_module(library)
-        if library in {'scipy', 'numpy', 'pymc3'} and module is None:
+        if library in {'scipy', 'numpy', 'pymc3', 'pymc'} and module is None:
             raise ValueError("Failed to import %s" % library)
 
         if library == 'scipy':
@@ -1616,14 +1629,18 @@ class Distribution(Basic):
                 rand_state = seed
             _size = None if size == () else size
             samps = do_sample_numpy(self, _size, rand_state)
-        elif library == 'pymc3':
-            from sympy.stats.sampling.sample_pymc3 import do_sample_pymc3
+        elif library in ('pymc', 'pymc3'):
+            from sympy.stats.sampling.sample_pymc import do_sample_pymc
             import logging
-            logging.getLogger("pymc3").setLevel(logging.ERROR)
-            import pymc3
-            with pymc3.Model():
-                if do_sample_pymc3(self):
-                    samps = pymc3.sample(draws=prod(size), chains=1, compute_convergence_checks=False,
+            logging.getLogger("pymc").setLevel(logging.ERROR)
+            try:
+                import pymc
+            except ImportError:
+                import pymc3 as pymc
+
+            with pymc.Model():
+                if do_sample_pymc(self) is not None:
+                    samps = pymc.sample(draws=prod(size), chains=1, compute_convergence_checks=False,
                             progressbar=False, random_seed=seed, return_inferencedata=False)[:]['X']
                     samps = samps.reshape(size)
                 else:
@@ -1655,7 +1672,7 @@ def _value_check(condition, message):
     >>> _value_check(2 < 3, '')
     True
 
-    Here, the condition is not False, but it doesn't evaluate to True
+    Here, the condition is not False, but it does not evaluate to True
     so False is returned (but no error is raised). So checking if the
     return value is True or False will tell you if all conditions were
     evaluated.
@@ -1761,7 +1778,7 @@ def sample_stochastic_process(process):
     >>> from sympy import Matrix
     >>> T = Matrix([[0.5, 0.2, 0.3],[0.2, 0.5, 0.3],[0.2, 0.3, 0.5]])
     >>> Y = DiscreteMarkovChain("Y", [0, 1, 2], T)
-    >>> next(sample_stochastic_process(Y)) in Y.state_space # doctest: +SKIP
+    >>> next(sample_stochastic_process(Y)) in Y.state_space
     True
     >>> next(sample_stochastic_process(Y))  # doctest: +SKIP
     0

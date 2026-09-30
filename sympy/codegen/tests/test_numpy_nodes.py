@@ -1,16 +1,19 @@
+from __future__ import annotations
 from itertools import product
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
 from sympy.functions.elementary.exponential import (exp, log)
+from sympy.functions.elementary.miscellaneous import Max, Min
 from sympy.printing.repr import srepr
-from sympy.codegen.numpy_nodes import logaddexp, logaddexp2
+from sympy.codegen.numpy_nodes import logaddexp, logaddexp2, minimum, maximum, amax, amin
+from sympy.testing.pytest import raises
 
 x, y, z = symbols('x y z')
 
 def test_logaddexp():
     lae_xy = logaddexp(x, y)
     ref_xy = log(exp(x) + exp(y))
-    for wrt, deriv_order in product([x, y, z], range(0, 3)):
+    for wrt, deriv_order in product([x, y, z], range(3)):
         assert (
             lae_xy.diff(wrt, deriv_order) -
             ref_xy.diff(wrt, deriv_order)
@@ -30,7 +33,7 @@ def test_logaddexp():
 def test_logaddexp2():
     lae2_xy = logaddexp2(x, y)
     ref2_xy = log(2**x + 2**y)/log(2)
-    for wrt, deriv_order in product([x, y, z], range(0, 3)):
+    for wrt, deriv_order in product([x, y, z], range(3)):
         assert (
             lae2_xy.diff(wrt, deriv_order) -
             ref2_xy.diff(wrt, deriv_order)
@@ -48,3 +51,20 @@ def test_logaddexp2():
     assert lae2_sum_to_2.simplify() == 1
     was = logaddexp2(x, y)
     assert srepr(was) == srepr(was.simplify())  # cannot simplify with x, y
+
+
+def test_minimum_maximum():
+    for MM, mm in zip([Min, Max], [minimum, maximum]):
+        ref = MM(x, y, z)
+        m = mm(x, y, z)
+        assert m != ref
+        assert m.rewrite(MM) == ref
+
+
+def test_amin_amax():
+    for am in [amin, amax]:
+        assert am(x).array == x
+        assert am(x).axis == None  # noqa: E711
+        assert am(x, axis=3).axis == 3
+        with raises(ValueError):
+            am(x, y, z)

@@ -1,13 +1,10 @@
 """Low-level linear systems solver. """
+from __future__ import annotations
 
+from itertools import pairwise
 
-from sympy.utilities.exceptions import SymPyDeprecationWarning
 from sympy.utilities.iterables import connected_components
 
-from sympy.core.sympify import sympify
-from sympy.core.numbers import Integer, Rational
-from sympy.matrices.dense import MutableDenseMatrix
-from sympy.polys.domains import ZZ, QQ
 
 from sympy.polys.domains import EX
 from sympy.polys.rings import sring
@@ -18,52 +15,6 @@ from sympy.polys.domainmatrix import DomainMatrix
 class PolyNonlinearError(Exception):
     """Raised by solve_lin_sys for nonlinear equations"""
     pass
-
-
-class RawMatrix(MutableDenseMatrix):
-    """
-    XXX: This class is broken by design. Use DomainMatrix if you want a matrix
-    over the polys domains or Matrix for a matrix with Expr elements. The
-    RawMatrix class will be removed/broken in future in order to reestablish
-    the invariant that the elements of a Matrix should be of type Expr.
-    """
-    _sympify = staticmethod(lambda x: x)
-
-    def __init__(self, *args, **kwargs):
-
-        SymPyDeprecationWarning(
-            feature="RawMatrix class",
-            useinstead="DomainMatrix or Matrix",
-            issue=21405,
-            deprecated_since_version="1.9"
-        ).warn()
-
-        domain = ZZ
-        for i in range(self.rows):
-            for j in range(self.cols):
-                val = self[i,j]
-                if getattr(val, 'is_Poly', False):
-                    K = val.domain[val.gens]
-                    val_sympy = val.as_expr()
-                elif hasattr(val, 'parent'):
-                    K = val.parent()
-                    val_sympy = K.to_sympy(val)
-                elif isinstance(val, (int, Integer)):
-                    K = ZZ
-                    val_sympy = sympify(val)
-                elif isinstance(val, Rational):
-                    K = QQ
-                    val_sympy = val
-                else:
-                    for K in ZZ, QQ:
-                        if K.of_type(val):
-                            val_sympy = K.to_sympy(val)
-                            break
-                    else:
-                        raise TypeError
-                domain = domain.unify(K)
-                self[i,j] = val_sympy
-        self.ring = domain
 
 
 def eqs_to_matrix(eqs_coeffs, eqs_rhs, gens, domain):
@@ -203,7 +154,7 @@ def solve_lin_sys(eqs, ring, _raw=True):
         PolynomialRing (assumed equal to zero).
     ring: PolynomialRing
         The polynomial ring from which eqs are drawn. The generators of this
-        ring are the unkowns to be solved for and the domain of the ring is
+        ring are the unknowns to be solved for and the domain of the ring is
         the domain of the coefficients of the system of equations.
     _raw: bool
         If *_raw* is False, the keys and values in the returned dictionary
@@ -330,7 +281,7 @@ def _solve_lin_sys(eqs_coeffs, eqs_rhs, ring):
     E = []
     for eq_coeffs in eqs_coeffs:
         syms = list(eq_coeffs)
-        E.extend(zip(syms[:-1], syms[1:]))
+        E.extend(pairwise(syms))
     G = V, E
 
     components = connected_components(G)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from time import perf_counter
 
 
@@ -86,14 +87,7 @@ class PlotWindow(ManagedWindow):
         if len(self.plot._functions.values()) == 0:
             self.drawing_first_object = True
 
-        try:
-            dict.iteritems
-        except AttributeError:
-            # Python 3
-            iterfunctions = iter(self.plot._functions.values())
-        else:
-            # Python 2
-            iterfunctions = self.plot._functions.itervalues()
+        iterfunctions = iter(self.plot._functions.values())
 
         for r in iterfunctions:
             if self.drawing_first_object:

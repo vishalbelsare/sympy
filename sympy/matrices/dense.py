@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import random
 
 from sympy.core.basic import Basic
@@ -5,16 +9,22 @@ from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
 from sympy.core.sympify import sympify
 from sympy.functions.elementary.trigonometric import cos, sin
-from sympy.simplify.simplify import simplify as _simplify
 from sympy.utilities.decorator import doctest_depends_on
-from sympy.utilities.exceptions import SymPyDeprecationWarning
+from sympy.utilities.exceptions import sympy_deprecation_warning
 from sympy.utilities.iterables import is_sequence
 
-from .common import ShapeError
+from .exceptions import ShapeError
 from .decompositions import _cholesky, _LDLdecomposition
-from .matrices import MatrixBase
+from .matrixbase import MatrixBase
 from .repmatrix import MutableRepMatrix, RepMatrix
 from .solvers import _lower_triangular_solve, _upper_triangular_solve
+
+
+if TYPE_CHECKING:
+    from typing_extensions import Self
+
+
+__doctest_requires__ = {('symarray',): ['numpy']}
 
 
 def _iszero(x):
@@ -31,19 +41,21 @@ class DenseMatrix(RepMatrix):
     # Sparse classes should be implemented here.
     #
 
-    is_MatrixExpr = False  # type: bool
+    is_MatrixExpr: bool = False
 
     _op_priority = 10.01
     _class_priority = 4
 
     @property
     def _mat(self):
-
-        SymPyDeprecationWarning(
-            feature="The private _mat attribute of Matrix",
-            useinstead="the .flat() method",
-            issue=21715,
-            deprecated_since_version="1.9").warn()
+        sympy_deprecation_warning(
+            """
+            The private _mat attribute of Matrix is deprecated. Use the
+            .flat() method instead.
+            """,
+            deprecated_since_version="1.9",
+            active_deprecations_target="deprecated-private-matrix-attributes"
+        )
 
         return self.flat()
 
@@ -78,7 +90,7 @@ class DenseMatrix(RepMatrix):
     def cholesky(self, hermitian=True):
         return _cholesky(self, hermitian=hermitian)
 
-    def LDLdecomposition(self, hermitian=True):
+    def LDLdecomposition(self, hermitian: bool = True) -> tuple[Self, Self]:
         return _LDLdecomposition(self, hermitian=hermitian)
 
     def lower_triangular_solve(self, rhs):
@@ -93,6 +105,7 @@ class DenseMatrix(RepMatrix):
     upper_triangular_solve.__doc__ = _upper_triangular_solve.__doc__
 
 
+# XXX: This function doesn't seem to be used anywhere. Delete it.
 def _force_mutable(x):
     """Return a matrix as a Matrix, otherwise return x."""
     if getattr(x, 'is_Matrix', False):
@@ -109,7 +122,10 @@ def _force_mutable(x):
 
 class MutableDenseMatrix(DenseMatrix, MutableRepMatrix):
 
-    def simplify(self, **kwargs):
+    # The simplify method for mutable mattrices is inconsistent with the
+    # one for immutable matrices.
+
+    def simplify(self, **kwargs) -> None: # type: ignore
         """Applies simplify to the elements of a matrix in place.
 
         This is a shortcut for M.applyfunc(lambda x: simplify(x, ratio, measure))
@@ -119,15 +135,18 @@ class MutableDenseMatrix(DenseMatrix, MutableRepMatrix):
 
         sympy.simplify.simplify.simplify
         """
+        from sympy.simplify.simplify import simplify as _simplify
         for (i, j), element in self.todok().items():
             self[i, j] = _simplify(element, **kwargs)
 
 
-MutableMatrix = Matrix = MutableDenseMatrix
+MutableMatrix = MutableDenseMatrix
+Matrix = MutableDenseMatrix
+
 
 ###########
 # Numpy Utility Functions:
-# list2numpy, matrix2numpy, symmarray, rot_axis[123]
+# list2numpy, matrix2numpy, symmarray
 ###########
 
 
@@ -162,15 +181,153 @@ def matrix2numpy(m, dtype=object):  # pragma: no cover
     return a
 
 
-def rot_axis3(theta):
-    """Returns a rotation matrix for a rotation of theta (in radians) about
-    the 3-axis.
+###########
+# Rotation matrices:
+# rot_givens, rot_axis[123], rot_ccw_axis[123]
+###########
+
+
+def rot_givens(i, j, theta, dim=3):
+    r"""Returns a a Givens rotation matrix, a a rotation in the
+    plane spanned by two coordinates axes.
+
+    Explanation
+    ===========
+
+    The Givens rotation corresponds to a generalization of rotation
+    matrices to any number of dimensions, given by:
+
+    .. math::
+        G(i, j, \theta) =
+            \begin{bmatrix}
+                1   & \cdots &    0   & \cdots &    0   & \cdots &    0   \\
+                \vdots & \ddots & \vdots &        & \vdots &        & \vdots \\
+                0   & \cdots &    c   & \cdots &   -s   & \cdots &    0   \\
+                \vdots &        & \vdots & \ddots & \vdots &        & \vdots \\
+                0   & \cdots &    s   & \cdots &    c   & \cdots &    0   \\
+                \vdots &        & \vdots &        & \vdots & \ddots & \vdots \\
+                0   & \cdots &    0   & \cdots &    0   & \cdots &    1
+            \end{bmatrix}
+
+    Where $c = \cos(\theta)$ and $s = \sin(\theta)$ appear at the intersections
+    ``i``\th and ``j``\th rows and columns.
+
+    For fixed ``i > j``\, the non-zero elements of a Givens matrix are
+    given by:
+
+    - $g_{kk} = 1$ for $k \ne i,\,j$
+    - $g_{kk} = c$ for $k = i,\,j$
+    - $g_{ji} = -g_{ij} = -s$
+
+    Parameters
+    ==========
+
+    i : int between ``0`` and ``dim - 1``
+        Represents first axis
+    j : int between ``0`` and ``dim - 1``
+        Represents second axis
+    dim : int bigger than 1
+        Number of dimensions. Defaults to 3.
 
     Examples
     ========
 
-    >>> from sympy import pi
-    >>> from sympy.matrices import rot_axis3
+    >>> from sympy import pi, rot_givens
+
+    A counterclockwise rotation of pi/3 (60 degrees) around
+    the third axis (z-axis):
+
+    >>> rot_givens(1, 0, pi/3)
+    Matrix([
+    [      1/2, -sqrt(3)/2, 0],
+    [sqrt(3)/2,        1/2, 0],
+    [        0,          0, 1]])
+
+    If we rotate by pi/2 (90 degrees):
+
+    >>> rot_givens(1, 0, pi/2)
+    Matrix([
+    [0, -1, 0],
+    [1,  0, 0],
+    [0,  0, 1]])
+
+    This can be generalized to any number
+    of dimensions:
+
+    >>> rot_givens(1, 0, pi/2, dim=4)
+    Matrix([
+    [0, -1, 0, 0],
+    [1,  0, 0, 0],
+    [0,  0, 1, 0],
+    [0,  0, 0, 1]])
+
+    References
+    ==========
+
+    .. [1] https://en.wikipedia.org/wiki/Givens_rotation
+
+    See Also
+    ========
+
+    rot_axis1: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 1-axis (clockwise around the x axis)
+    rot_axis2: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 2-axis (clockwise around the y axis)
+    rot_axis3: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 3-axis (clockwise around the z axis)
+    rot_ccw_axis1: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 1-axis (counterclockwise around the x axis)
+    rot_ccw_axis2: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 2-axis (counterclockwise around the y axis)
+    rot_ccw_axis3: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 3-axis (counterclockwise around the z axis)
+    """
+    if not isinstance(dim, int) or dim < 2:
+        raise ValueError('dim must be an integer bigger than one, '
+                         'got {}.'.format(dim))
+
+    if i == j:
+        raise ValueError('i and j must be different, '
+                         'got ({}, {})'.format(i, j))
+
+    for ij in [i, j]:
+        if not isinstance(ij, int) or ij < 0 or ij > dim - 1:
+            raise ValueError('i and j must be integers between 0 and '
+                             '{}, got i={} and j={}.'.format(dim-1, i, j))
+
+    theta = sympify(theta)
+    c = cos(theta)
+    s = sin(theta)
+    M = eye(dim)
+    M[i, i] = c
+    M[j, j] = c
+    M[i, j] = s
+    M[j, i] = -s
+    return M
+
+
+def rot_axis3(theta):
+    r"""Returns a rotation matrix for a rotation of theta (in radians)
+    about the 3-axis.
+
+    Explanation
+    ===========
+
+    For a right-handed coordinate system, this corresponds to a
+    clockwise rotation around the `z`-axis, given by:
+
+    .. math::
+
+        R  = \begin{bmatrix}
+                 \cos(\theta) & \sin(\theta) & 0 \\
+                -\sin(\theta) & \cos(\theta) & 0 \\
+                            0 &            0 & 1
+            \end{bmatrix}
+
+    Examples
+    ========
+
+    >>> from sympy import pi, rot_axis3
 
     A rotation of pi/3 (60 degrees):
 
@@ -192,28 +349,40 @@ def rot_axis3(theta):
     See Also
     ========
 
+    rot_givens: Returns a Givens rotation matrix (generalized rotation for
+        any number of dimensions)
+    rot_ccw_axis3: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 3-axis (counterclockwise around the z axis)
     rot_axis1: Returns a rotation matrix for a rotation of theta (in radians)
-        about the 1-axis
+        about the 1-axis (clockwise around the x axis)
     rot_axis2: Returns a rotation matrix for a rotation of theta (in radians)
-        about the 2-axis
+        about the 2-axis (clockwise around the y axis)
     """
-    ct = cos(theta)
-    st = sin(theta)
-    lil = ((ct, st, 0),
-           (-st, ct, 0),
-           (0, 0, 1))
-    return Matrix(lil)
+    return rot_givens(0, 1, theta, dim=3)
 
 
 def rot_axis2(theta):
-    """Returns a rotation matrix for a rotation of theta (in radians) about
-    the 2-axis.
+    r"""Returns a rotation matrix for a rotation of theta (in radians)
+    about the 2-axis.
+
+    Explanation
+    ===========
+
+    For a right-handed coordinate system, this corresponds to a
+    clockwise rotation around the `y`-axis, given by:
+
+    .. math::
+
+        R  = \begin{bmatrix}
+                \cos(\theta) & 0 & -\sin(\theta) \\
+                           0 & 1 &             0 \\
+                \sin(\theta) & 0 &  \cos(\theta)
+            \end{bmatrix}
 
     Examples
     ========
 
-    >>> from sympy import pi
-    >>> from sympy.matrices import rot_axis2
+    >>> from sympy import pi, rot_axis2
 
     A rotation of pi/3 (60 degrees):
 
@@ -235,28 +404,40 @@ def rot_axis2(theta):
     See Also
     ========
 
+    rot_givens: Returns a Givens rotation matrix (generalized rotation for
+        any number of dimensions)
+    rot_ccw_axis2: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 2-axis (clockwise around the y axis)
     rot_axis1: Returns a rotation matrix for a rotation of theta (in radians)
-        about the 1-axis
+        about the 1-axis (counterclockwise around the x axis)
     rot_axis3: Returns a rotation matrix for a rotation of theta (in radians)
-        about the 3-axis
+        about the 3-axis (counterclockwise around the z axis)
     """
-    ct = cos(theta)
-    st = sin(theta)
-    lil = ((ct, 0, -st),
-           (0, 1, 0),
-           (st, 0, ct))
-    return Matrix(lil)
+    return rot_givens(2, 0, theta, dim=3)
 
 
 def rot_axis1(theta):
-    """Returns a rotation matrix for a rotation of theta (in radians) about
-    the 1-axis.
+    r"""Returns a rotation matrix for a rotation of theta (in radians)
+    about the 1-axis.
+
+    Explanation
+    ===========
+
+    For a right-handed coordinate system, this corresponds to a
+    clockwise rotation around the `x`-axis, given by:
+
+    .. math::
+
+        R  = \begin{bmatrix}
+                1 &             0 &            0 \\
+                0 &  \cos(\theta) & \sin(\theta) \\
+                0 & -\sin(\theta) & \cos(\theta)
+            \end{bmatrix}
 
     Examples
     ========
 
-    >>> from sympy import pi
-    >>> from sympy.matrices import rot_axis1
+    >>> from sympy import pi, rot_axis1
 
     A rotation of pi/3 (60 degrees):
 
@@ -278,17 +459,181 @@ def rot_axis1(theta):
     See Also
     ========
 
+    rot_givens: Returns a Givens rotation matrix (generalized rotation for
+        any number of dimensions)
+    rot_ccw_axis1: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 1-axis (counterclockwise around the x axis)
     rot_axis2: Returns a rotation matrix for a rotation of theta (in radians)
-        about the 2-axis
+        about the 2-axis (clockwise around the y axis)
     rot_axis3: Returns a rotation matrix for a rotation of theta (in radians)
-        about the 3-axis
+        about the 3-axis (clockwise around the z axis)
     """
-    ct = cos(theta)
-    st = sin(theta)
-    lil = ((1, 0, 0),
-           (0, ct, st),
-           (0, -st, ct))
-    return Matrix(lil)
+    return rot_givens(1, 2, theta, dim=3)
+
+
+def rot_ccw_axis3(theta):
+    r"""Returns a rotation matrix for a rotation of theta (in radians)
+    about the 3-axis.
+
+    Explanation
+    ===========
+
+    For a right-handed coordinate system, this corresponds to a
+    counterclockwise rotation around the `z`-axis, given by:
+
+    .. math::
+
+        R  = \begin{bmatrix}
+                \cos(\theta) & -\sin(\theta) & 0 \\
+                \sin(\theta) &  \cos(\theta) & 0 \\
+                           0 &             0 & 1
+            \end{bmatrix}
+
+    Examples
+    ========
+
+    >>> from sympy import pi, rot_ccw_axis3
+
+    A rotation of pi/3 (60 degrees):
+
+    >>> theta = pi/3
+    >>> rot_ccw_axis3(theta)
+    Matrix([
+    [      1/2, -sqrt(3)/2, 0],
+    [sqrt(3)/2,        1/2, 0],
+    [        0,          0, 1]])
+
+    If we rotate by pi/2 (90 degrees):
+
+    >>> rot_ccw_axis3(pi/2)
+    Matrix([
+    [0, -1, 0],
+    [1,  0, 0],
+    [0,  0, 1]])
+
+    See Also
+    ========
+
+    rot_givens: Returns a Givens rotation matrix (generalized rotation for
+        any number of dimensions)
+    rot_axis3: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 3-axis (clockwise around the z axis)
+    rot_ccw_axis1: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 1-axis (counterclockwise around the x axis)
+    rot_ccw_axis2: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 2-axis (counterclockwise around the y axis)
+    """
+    return rot_givens(1, 0, theta, dim=3)
+
+
+def rot_ccw_axis2(theta):
+    r"""Returns a rotation matrix for a rotation of theta (in radians)
+    about the 2-axis.
+
+    Explanation
+    ===========
+
+    For a right-handed coordinate system, this corresponds to a
+    counterclockwise rotation around the `y`-axis, given by:
+
+    .. math::
+
+        R  = \begin{bmatrix}
+                 \cos(\theta) & 0 & \sin(\theta) \\
+                            0 & 1 &            0 \\
+                -\sin(\theta) & 0 & \cos(\theta)
+            \end{bmatrix}
+
+    Examples
+    ========
+
+    >>> from sympy import pi, rot_ccw_axis2
+
+    A rotation of pi/3 (60 degrees):
+
+    >>> theta = pi/3
+    >>> rot_ccw_axis2(theta)
+    Matrix([
+    [       1/2, 0, sqrt(3)/2],
+    [         0, 1,         0],
+    [-sqrt(3)/2, 0,       1/2]])
+
+    If we rotate by pi/2 (90 degrees):
+
+    >>> rot_ccw_axis2(pi/2)
+    Matrix([
+    [ 0,  0,  1],
+    [ 0,  1,  0],
+    [-1,  0,  0]])
+
+    See Also
+    ========
+
+    rot_givens: Returns a Givens rotation matrix (generalized rotation for
+        any number of dimensions)
+    rot_axis2: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 2-axis (clockwise around the y axis)
+    rot_ccw_axis1: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 1-axis (counterclockwise around the x axis)
+    rot_ccw_axis3: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 3-axis (counterclockwise around the z axis)
+    """
+    return rot_givens(0, 2, theta, dim=3)
+
+
+def rot_ccw_axis1(theta):
+    r"""Returns a rotation matrix for a rotation of theta (in radians)
+    about the 1-axis.
+
+    Explanation
+    ===========
+
+    For a right-handed coordinate system, this corresponds to a
+    counterclockwise rotation around the `x`-axis, given by:
+
+    .. math::
+
+        R  = \begin{bmatrix}
+                1 &            0 &             0 \\
+                0 & \cos(\theta) & -\sin(\theta) \\
+                0 & \sin(\theta) &  \cos(\theta)
+            \end{bmatrix}
+
+    Examples
+    ========
+
+    >>> from sympy import pi, rot_ccw_axis1
+
+    A rotation of pi/3 (60 degrees):
+
+    >>> theta = pi/3
+    >>> rot_ccw_axis1(theta)
+    Matrix([
+    [1,         0,          0],
+    [0,       1/2, -sqrt(3)/2],
+    [0, sqrt(3)/2,        1/2]])
+
+    If we rotate by pi/2 (90 degrees):
+
+    >>> rot_ccw_axis1(pi/2)
+    Matrix([
+    [1, 0,  0],
+    [0, 0, -1],
+    [0, 1,  0]])
+
+    See Also
+    ========
+
+    rot_givens: Returns a Givens rotation matrix (generalized rotation for
+        any number of dimensions)
+    rot_axis1: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 1-axis (clockwise around the x axis)
+    rot_ccw_axis2: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 2-axis (counterclockwise around the y axis)
+    rot_ccw_axis3: Returns a rotation matrix for a rotation of theta (in radians)
+        about the 3-axis (counterclockwise around the z axis)
+    """
+    return rot_givens(2, 1, theta, dim=3)
 
 
 @doctest_depends_on(modules=('numpy',))
@@ -454,9 +799,9 @@ def diag(*values, strict=True, unpack=False, **kwargs):
 
     See Also
     ========
-    .common.MatrixCommon.eye
-    .common.MatrixCommon.diagonal - to extract a diagonal
-    .common.MatrixCommon.diag
+    .matrixbase.MatrixBase.eye
+    .matrixbase.MatrixBase.diagonal
+    .matrixbase.MatrixBase.diag
     .expressions.blockmatrix.BlockMatrix
     """
     return Matrix.diag(*values, strict=strict, unpack=unpack, **kwargs)
@@ -491,7 +836,7 @@ def GramSchmidt(vlist, orthonormal=False):
     See Also
     ========
 
-    .matrices.MatrixSubspaces.orthogonalize
+    sympy.matrices.matrixbase.MatrixBase.orthogonalize
 
     References
     ==========
@@ -543,7 +888,7 @@ def hessian(f, varlist, constraints=()):
     See Also
     ========
 
-    sympy.matrices.matrices.MatrixCalculus.jacobian
+    sympy.matrices.matrixbase.MatrixBase.jacobian
     wronskian
     """
     # f is the expression representing a function f, return regular matrix
@@ -587,7 +932,7 @@ def jordan_cell(eigenval, n):
     Examples
     ========
 
-    >>> from sympy.matrices import jordan_cell
+    >>> from sympy import jordan_cell
     >>> from sympy.abc import x
     >>> jordan_cell(x, 4)
     Matrix([
@@ -603,8 +948,7 @@ def jordan_cell(eigenval, n):
 def matrix_multiply_elementwise(A, B):
     """Return the Hadamard product (elementwise product) of A and B
 
-    >>> from sympy.matrices import matrix_multiply_elementwise
-    >>> from sympy.matrices import Matrix
+    >>> from sympy import Matrix, matrix_multiply_elementwise
     >>> A = Matrix([[0, 1, 2], [3, 4, 5]])
     >>> B = Matrix([[1, 10, 100], [100, 10, 1]])
     >>> matrix_multiply_elementwise(A, B)
@@ -615,7 +959,7 @@ def matrix_multiply_elementwise(A, B):
     See Also
     ========
 
-    sympy.matrices.common.MatrixCommon.__mul__
+    sympy.matrices.matrixbase.MatrixBase.__mul__
     """
     return A.multiply_elementwise(B)
 
@@ -658,7 +1002,7 @@ def randMatrix(r, c=None, min=0, max=99, seed=None, symmetric=False,
     Examples
     ========
 
-    >>> from sympy.matrices import randMatrix
+    >>> from sympy import randMatrix
     >>> randMatrix(3) # doctest:+SKIP
     [25, 45, 27]
     [44, 54,  9]
@@ -733,12 +1077,11 @@ def wronskian(functions, var, method='bareiss'):
     See Also
     ========
 
-    sympy.matrices.matrices.MatrixCalculus.jacobian
+    sympy.matrices.matrixbase.MatrixBase.jacobian
     hessian
     """
 
-    for index in range(0, len(functions)):
-        functions[index] = sympify(functions[index])
+    functions = [sympify(f) for f in functions]
     n = len(functions)
     if n == 0:
         return S.One

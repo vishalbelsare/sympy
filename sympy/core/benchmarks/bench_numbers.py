@@ -1,4 +1,6 @@
-from sympy.core.numbers import Integer, Rational, integer_nthroot, igcd, pi, oo
+from __future__ import annotations
+from sympy.core.numbers import Integer, Rational, pi, oo
+from sympy.core.intfunc import integer_nthroot, igcd
 from sympy.core.singleton import S
 
 i3 = Integer(3)

@@ -1,18 +1,7 @@
 """
 This module adds several functions for interactive source code inspection.
 """
-
-from sympy.utilities.decorator import deprecated
-
-import inspect
-
-@deprecated(useinstead="?? in IPython/Jupyter or inspect.getsource", issue=14905, deprecated_since_version="1.3")
-def source(object):
-    """
-    Prints the source code of a given object.
-    """
-    print('In file: %s' % inspect.getsourcefile(object))
-    print(inspect.getsource(object))
+from __future__ import annotations
 
 
 def get_class(lookup_view):

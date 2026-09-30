@@ -1,3 +1,5 @@
+from __future__ import annotations
+from itertools import product
 from sympy.core.function import (Subs, count_ops, diff, expand)
 from sympy.core.numbers import (E, I, Rational, pi)
 from sympy.core.singleton import S
@@ -7,6 +9,9 @@ from sympy.functions.elementary.hyperbolic import (cosh, coth, sinh, tanh)
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import (cos, cot, sin, tan)
+from sympy.functions.elementary.trigonometric import (acos, asin, atan2)
+from sympy.functions.elementary.trigonometric import (asec, acsc)
+from sympy.functions.elementary.trigonometric import (acot, atan)
 from sympy.integrals.integrals import integrate
 from sympy.matrices.dense import Matrix
 from sympy.simplify.simplify import simplify
@@ -54,7 +59,7 @@ def test_trigsimp1():
     assert trigsimp(tanh(x + y) - tanh(x)/(1 + tanh(x)*tanh(y))) == \
         sinh(y)/(sinh(y)*tanh(x) + cosh(y))
 
-    assert trigsimp(cos(0.12345)**2 + sin(0.12345)**2) == 1
+    assert trigsimp(cos(0.12345)**2 + sin(0.12345)**2) == 1.0
     e = 2*sin(x)**2 + 2*cos(x)**2
     assert trigsimp(log(e)) == log(2)
 
@@ -205,6 +210,13 @@ def test_trigsimp_issues():
 
     assert trigsimp(-sin(x)**4 - 2*sin(x)**2*cos(x)**2 - cos(x)**4) == -1
 
+    # issue 29056: the expressions below previously manipulated Dummy variables
+    # in a way that prevented restoring them, leaving them in the final output
+    z = (-sinh((x - 2*I*atan(sinh(x/2)))/4))*sinh((x + 2*I*atan(sinh(x/2)))/4)
+    assert trigsimp(z) == -cosh(x/2)/2 + 1/(2*sqrt(sinh(x/2)**2 + 1))
+    z = cosh(x/4 + I/2*atan(sinh(x/2))) * cosh(-x/4 + I/2*atan(sinh(x/2)))
+    z1 = -I*sinh(x/4 + I/2*atan(sinh(x/2))) * -I*sinh(-x/4 + I/2*atan(sinh(x/2)))
+    assert trigsimp(cosh(x/2) * (z - z1)) == cosh(x/2)/sqrt(sinh(x/2)**2 + 1)
 
 def test_trigsimp_issue_2515():
     x = Symbol('x')
@@ -489,10 +501,28 @@ def test_trigsimp_old():
     assert trigsimp(cosh(x + y) + cosh(x - y), old=True) == 2*cosh(x)*cosh(y)
     assert trigsimp(cosh(x + y) - cosh(x - y), old=True) == 2*sinh(x)*sinh(y)
 
-    assert trigsimp(cos(0.12345)**2 + sin(0.12345)**2, old=True) == 1
+    assert trigsimp(cos(0.12345)**2 + sin(0.12345)**2, old=True) == 1.0
 
     assert trigsimp(sin(x)/cos(x), old=True, method='combined') == tan(x)
     assert trigsimp(sin(x)/cos(x), old=True, method='groebner') == sin(x)/cos(x)
     assert trigsimp(sin(x)/cos(x), old=True, method='groebner', hints=[tan]) == tan(x)
 
     assert trigsimp(1-sin(sin(x)**2+cos(x)**2)**2, old=True, deep=True) == cos(1)**2
+
+
+def test_trigsimp_inverse():
+    alpha = symbols('alpha')
+    s, c = sin(alpha), cos(alpha)
+
+    for finv in [asin, acos, asec, acsc, atan, acot]:
+        f = finv.inverse(None)
+        assert alpha == trigsimp(finv(f(alpha)), inverse=True)
+
+    # test atan2(cos, sin), atan2(sin, cos), etc...
+    for a, b in [[c, s], [s, c]]:
+        for i, j in product([-1, 1], repeat=2):
+            angle = atan2(i*b, j*a)
+            angle_inverted = trigsimp(angle, inverse=True)
+            assert angle_inverted != angle  # assures simplification happened
+            assert sin(angle_inverted) == trigsimp(sin(angle))
+            assert cos(angle_inverted) == trigsimp(cos(angle))

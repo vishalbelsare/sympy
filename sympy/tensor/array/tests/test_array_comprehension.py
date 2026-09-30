@@ -1,7 +1,8 @@
+from __future__ import annotations
 from sympy.tensor.array.array_comprehension import ArrayComprehension, ArrayComprehensionMap
 from sympy.tensor.array import ImmutableDenseNDimArray
 from sympy.abc import i, j, k, l
-from sympy.testing.pytest import raises, warns_deprecated_sympy
+from sympy.testing.pytest import raises
 from sympy.matrices import Matrix
 
 
@@ -25,7 +26,7 @@ def test_array_comprehension():
     assert b.subs(j, 3) == ArrayComprehension(i, (i, 1, 4))
     assert b.free_symbols == {j}
     assert b.shape == (j + 1,)
-    assert b.rank() == 1
+    assert b.ndim == 1
     assert b.is_shape_numeric == False
     assert c.free_symbols == set()
     assert c.function == i + j + k + l
@@ -74,6 +75,5 @@ def test_arraycomprehensionmap():
     assert ArrayComprehensionMap(lambda: 3, (i, 1, 5)).doit().tolist() == [3, 3, 3, 3, 3]
     assert ArrayComprehensionMap(lambda i: i+1, (i, 1, 5)).doit().tolist() == [2, 3, 4, 5, 6]
     raises(ValueError, lambda: ArrayComprehensionMap(i*j, (i, 1, 3), (j, 2, 4)))
-    with warns_deprecated_sympy():
-        a = ArrayComprehensionMap(lambda i, j: i+j, (i, 1, 5))
-        raises(ValueError, lambda: a.doit())
+    a = ArrayComprehensionMap(lambda i, j: i+j, (i, 1, 5))
+    raises(ValueError, lambda: a.doit())

@@ -1,6 +1,6 @@
-==============
-Control Module
-==============
+=======
+Control
+=======
 
 .. module:: sympy.physics.control
 
@@ -10,8 +10,9 @@ Control Module
 
 
 .. toctree::
-    :maxdepth: 3
+   :titlesonly:
 
-    control.rst
-    lti.rst
-    control_plots.rst
+   control.rst
+   lti.rst
+   control_plots.rst
+   routh_table.rst

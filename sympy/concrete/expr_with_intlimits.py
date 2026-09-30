@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.concrete.expr_with_limits import ExprWithLimits
 from sympy.core.singleton import S
 from sympy.core.relational import Eq
@@ -21,6 +22,8 @@ class ExprWithIntLimits(ExprWithLimits):
     sympy.concrete.products.Product
     sympy.concrete.summations.Sum
     """
+    __slots__ = ()
+
     def change_index(self, var, trafo, newvar=None):
         r"""
         Change index of a Sum or Product.

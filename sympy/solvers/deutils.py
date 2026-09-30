@@ -8,6 +8,7 @@ ode_order
 _desolve
 
 """
+from __future__ import annotations
 from sympy.core import Pow
 from sympy.core.function import Derivative, AppliedUndef
 from sympy.core.relational import Equality
@@ -16,8 +17,8 @@ from sympy.core.symbol import Wild
 def _preprocess(expr, func=None, hint='_Integral'):
     """Prepare expr for solving by making sure that differentiation
     is done so that only func remains in unevaluated derivatives and
-    (if hint doesn't end with _Integral) that doit is applied to all
-    other derivatives. If hint is None, don't do any differentiation.
+    (if hint does not end with _Integral) that doit is applied to all
+    other derivatives. If hint is None, do not do any differentiation.
     (Currently this may cause some simple differential equations to
     fail.)
 
@@ -47,7 +48,7 @@ def _preprocess(expr, func=None, hint='_Integral'):
     >>> _preprocess(Derivative(f(y), z), f(y))
     (0, f(y))
 
-    Do others if the hint doesn't end in '_Integral' (the default
+    Do others if the hint does not end in '_Integral' (the default
     assumes that it does):
 
     >>> _preprocess(Derivative(g(x), y), f(x))
@@ -55,7 +56,7 @@ def _preprocess(expr, func=None, hint='_Integral'):
     >>> _preprocess(Derivative(f(x), y), f(x), hint='')
     (0, f(x))
 
-    Don't do any derivatives if hint is None:
+    Do not do any derivatives if hint is None:
 
     >>> eq = Derivative(f(x) + 1, x) + Derivative(f(x), y)
     >>> _preprocess(eq, f(x), hint=None)
@@ -90,6 +91,7 @@ def _preprocess(expr, func=None, hint='_Integral'):
     eq = expr.subs(reps)
     return eq, func
 
+
 def ode_order(expr, func):
     """
     Returns the order of a given differential
@@ -121,15 +123,14 @@ def ode_order(expr, func):
         if expr.args[0] == func:
             return len(expr.variables)
         else:
-            order = 0
-            for arg in expr.args[0].args:
-                order = max(order, ode_order(arg, func) + len(expr.variables))
-            return order
+            args = expr.args[0].args
+            rv = len(expr.variables)
+            if args:
+                rv += max(ode_order(_, func) for _ in args)
+            return rv
     else:
-        order = 0
-        for arg in expr.args:
-            order = max(order, ode_order(arg, func))
-        return order
+        return max(ode_order(_, func) for _ in expr.args) if expr.args else 0
+
 
 def _desolve(eq, func=None, hint="default", ics=None, simplify=True, *, prep=True, **kwargs):
     """This is a helper function to dsolve and pdsolve in the ode
@@ -249,7 +250,7 @@ def _desolve(eq, func=None, hint="default", ics=None, simplify=True, *, prep=Tru
         if hint == 'all_Integral':
             for i in hints:
                 if i.endswith('_Integral'):
-                    gethints.remove(i[:-len('_Integral')])
+                    gethints.remove(i.removesuffix('_Integral'))
             # special cases
             for k in ["1st_homogeneous_coeff_best", "1st_power_series",
                 "lie_group", "2nd_power_series_ordinary", "2nd_power_series_regular"]:

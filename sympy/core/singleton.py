@@ -1,10 +1,43 @@
 """Singleton mechanism"""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, overload
 
 from .core import Registry
-from .assumptions import ManagedProperties
 from .sympify import sympify
 
+
+if TYPE_CHECKING:
+    from typing import Any, TypeVar
+
+    from sympy.core.numbers import (
+        Zero as _Zero,
+        One as _One,
+        NegativeOne as _NegativeOne,
+        Half as _Half,
+        ImaginaryUnit as _ImaginaryUnit,
+        Exp1 as _Exp1,
+        Pi as _Pi,
+        GoldenRatio as _GoldenRatio,
+        TribonacciConstant as _TribonacciConstant,
+        EulerGamma as _EulerGamma,
+        Catalan as _Catalan,
+        Infinity as _Infinity,
+        NegativeInfinity as _NegativeInfinity,
+        ComplexInfinity as _ComplexInfinity,
+        NaN as _NaN,
+    )
+    from sympy.logic.boolalg import (
+        BooleanTrue as _BooleanTrue,
+        BooleanFalse as _BooleanFalse,
+    )
+
+    from .basic import Basic
+    from .expr import Expr
+    from .numbers import Float, Integer
+
+    Tbasic = TypeVar('Tbasic', bound=Basic)
 
 class SingletonRegistry(Registry):
     """
@@ -41,7 +74,7 @@ class SingletonRegistry(Registry):
     True
 
     For the most part, the fact that certain objects are singletonized is an
-    implementation detail that users shouldn't need to worry about. In SymPy
+    implementation detail that users should not need to worry about. In SymPy
     library code, ``is`` comparison is often used for performance purposes
     The primary advantage of ``S`` for end users is the convenient access to
     certain instances that are otherwise difficult to type, like ``S.Half``
@@ -71,8 +104,7 @@ class SingletonRegistry(Registry):
     This is for convenience, since ``S`` is a single letter. It's mostly
     useful for defining rational numbers. Consider an expression like ``x +
     1/2``. If you enter this directly in Python, it will evaluate the ``1/2``
-    and give ``0.5`` (or just ``0`` in Python 2, because of integer division),
-    because both arguments are ints (see also
+    and give ``0.5``, because both arguments are ints (see also
     :ref:`tutorial-gotchas-final-notes`). However, in SymPy, you usually want
     the quotient of two integers to give an exact rational number. The way
     Python's evaluation works, at least one side of an operator needs to be a
@@ -85,8 +117,41 @@ class SingletonRegistry(Registry):
     """
     __slots__ = ()
 
+    Zero: _Zero
+    One: _One
+    NegativeOne: _NegativeOne
+    Half: _Half
+    ImaginaryUnit: _ImaginaryUnit
+    Exp1: _Exp1
+    Pi: _Pi
+    GoldenRatio: _GoldenRatio
+    TribonacciConstant: _TribonacciConstant
+    EulerGamma: _EulerGamma
+    Catalan: _Catalan
+    Infinity: _Infinity
+    NegativeInfinity: _NegativeInfinity
+    ComplexInfinity: _ComplexInfinity
+    NaN: _NaN
+
+    true: _BooleanTrue
+    false: _BooleanFalse
+
     # Also allow things like S(5)
-    __call__ = staticmethod(sympify)
+    @overload
+    def __call__(self, a: int, *, strict: bool = False) -> Integer: ... # type: ignore
+    @overload
+    def __call__(self, a: float, *, strict: bool = False) -> Float: ...
+    @overload
+    def __call__(self, a: Expr | complex, *, strict: bool = False) -> Expr: ...
+    @overload
+    def __call__(self, a: Tbasic, *, strict: bool = False) -> Tbasic: ...
+    @overload
+    def __call__(self, a: Any, *, strict: bool = False) -> Basic: ...
+
+    def __call__(self, a, locals=None, convert_xor=True, strict=False, rational=False,
+            evaluate=None):
+        return sympify(a, locals=locals, convert_xor=convert_xor, strict=strict,
+                       rational=rational, evaluate=evaluate) # type: ignore
 
     def __init__(self):
         self._classes_to_install = {}
@@ -129,10 +194,15 @@ class SingletonRegistry(Registry):
     def __repr__(self):
         return "S"
 
+    def __reduce__(self):
+        # S is a singleton: pickling and copying should return the same
+        # instance so that it compares equal to itself after a round-trip.
+        return "S"
+
 S = SingletonRegistry()
 
 
-class Singleton(ManagedProperties):
+class Singleton(type):
     """
     Metaclass for singleton classes.
 
@@ -163,14 +233,8 @@ class Singleton(ManagedProperties):
     Instance creation is delayed until the first time the value is accessed.
     (SymPy versions before 1.0 would create the instance during class
     creation time, which would be prone to import cycles.)
-
-    This metaclass is a subclass of ManagedProperties because that is the
-    metaclass of many classes that need to be Singletons (Python does not allow
-    subclasses to have a different metaclass than the superclass, except the
-    subclass may use a subclassed metaclass).
     """
     def __init__(cls, *args, **kwargs):
-        super().__init__(cls, *args, **kwargs)
         cls._instance = obj = Basic.__new__(cls)
         cls.__new__ = lambda cls: obj
         cls.__getnewargs__ = lambda obj: ()

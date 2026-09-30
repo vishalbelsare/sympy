@@ -1,6 +1,7 @@
-from typing import Type
+from __future__ import annotations
+from itertools import product
 
-from sympy.core.add import Add
+from sympy.core import Add, Mul, Basic
 from sympy.core.assumptions import StdFactKB
 from sympy.core.expr import AtomicExpr, Expr
 from sympy.core.power import Pow
@@ -13,6 +14,7 @@ from sympy.vector.basisdependent import (BasisDependentZero,
     BasisDependent, BasisDependentMul, BasisDependentAdd)
 from sympy.vector.coordsysrect import CoordSys3D
 from sympy.vector.dyadic import Dyadic, BaseDyadic, DyadicAdd
+from sympy.vector.kind import VectorKind
 
 
 class Vector(BasisDependent):
@@ -22,15 +24,18 @@ class Vector(BasisDependent):
     instantiated by the user.
     """
 
+    is_scalar = False
     is_Vector = True
     _op_priority = 12.0
 
-    _expr_type = None  # type: Type[Vector]
-    _mul_func = None  # type: Type[Vector]
-    _add_func = None  # type: Type[Vector]
-    _zero_func = None  # type: Type[Vector]
-    _base_func = None  # type: Type[Vector]
-    zero = None  # type: VectorZero
+    _expr_type: type[Vector]
+    _mul_func: type[Vector]
+    _add_func: type[Vector]
+    _zero_func: type[Vector]
+    _base_func: type[Vector]
+    zero: VectorZero
+
+    kind: VectorKind = VectorKind()
 
     @property
     def components(self):
@@ -64,6 +69,73 @@ class Vector(BasisDependent):
         Returns the normalized version of this vector.
         """
         return self / self.magnitude()
+
+    def equals(self, other):
+        """
+        Check if ``self`` and ``other`` are identically equal vectors.
+
+        Explanation
+        ===========
+
+        Checks if two vector expressions are equal for all possible values of
+        the symbols present in the expressions.
+
+        Examples
+        ========
+
+        >>> from sympy.vector import CoordSys3D
+        >>> from sympy.abc import x, y
+        >>> from sympy import pi
+        >>> C = CoordSys3D('C')
+
+        Compare vectors that are equal or not:
+
+        >>> C.i.equals(C.j)
+        False
+        >>> C.i.equals(C.i)
+        True
+
+        These two vectors are equal if `x = y` but are not identically equal
+        as expressions since for some values of `x` and `y` they are unequal:
+
+        >>> v1 = x*C.i + C.j
+        >>> v2 = y*C.i + C.j
+        >>> v1.equals(v1)
+        True
+        >>> v1.equals(v2)
+        False
+
+        Vectors from different coordinate systems can be compared:
+
+        >>> D = C.orient_new_axis('D', pi/2, C.i)
+        >>> D.j.equals(C.j)
+        False
+        >>> D.j.equals(C.k)
+        True
+
+        Parameters
+        ==========
+
+        other: Vector
+            The other vector expression to compare with.
+
+        Returns
+        =======
+
+        ``True``, ``False`` or ``None``. A return value of ``True`` indicates
+        that the two vectors are identically equal. A return value of ``False``
+        indicates that they are not. In some cases it is not possible to
+        determine if the two vectors are identically equal and ``None`` is
+        returned.
+
+        See Also
+        ========
+
+        sympy.core.expr.Expr.equals
+        """
+        diff = self - other
+        diff_mag2 = diff.dot(diff)
+        return diff_mag2.equals(0)
 
     def dot(self, other):
         """
@@ -114,7 +186,7 @@ class Vector(BasisDependent):
                 outvec += vect_dot * v * k.args[1]
             return outvec
         from sympy.vector.deloperator import Del
-        if not isinstance(other, Vector) and not isinstance(other, Del):
+        if not isinstance(other, (Del, Vector)):
             raise TypeError(str(other) + " is not a vector, dyadic or " +
                             "del operator")
 
@@ -212,10 +284,8 @@ class Vector(BasisDependent):
 
         # Iterate over components of both the vectors to generate
         # the required Dyadic instance
-        args = []
-        for k1, v1 in self.components.items():
-            for k2, v2 in other.components.items():
-                args.append((v1 * v2) * BaseDyadic(k1, k2))
+        args = [(v1 * v2) * BaseDyadic(k1, k2) for (k1, v1), (k2, v2)
+                in product(self.components.items(), other.components.items())]
 
         return DyadicAdd(*args)
 
@@ -267,10 +337,10 @@ class Vector(BasisDependent):
         (0, 0, 0)
         """
 
-        from sympy.vector.operators import _get_coord_sys_from_expr
+        from sympy.vector.operators import _get_coord_systems
         if isinstance(self, VectorZero):
             return (S.Zero, S.Zero, S.Zero)
-        base_vec = next(iter(_get_coord_sys_from_expr(self))).base_vectors()
+        base_vec = next(iter(_get_coord_systems(self))).base_vectors()
         return tuple([self.dot(i) for i in base_vec])
 
     def __or__(self, other):
@@ -344,12 +414,27 @@ class Vector(BasisDependent):
         else:
             raise TypeError("Invalid division involving a vector")
 
+# The following is adapted from the matrices.expressions.matexpr file
+
+def _add_vector_postprocessor(expr: Add) -> Vector:
+    return VectorAdd(*expr.args).doit(deep=False)
+
+def _mul_vector_postprocessor(expr: Mul) -> Vector:
+    return VectorMul(*expr.args).doit(deep=False)
+
+def _pow_vector_postprocessor(expr: Pow):
+    raise TypeError("Power operation is not supported for vectors")
+
+
+Basic._constructor_postprocessor_mapping[Vector] = {
+    "Add": [_add_vector_postprocessor],
+    "Mul": [_mul_vector_postprocessor],
+    "Pow": [_pow_vector_postprocessor],
+}
 
 class BaseVector(Vector, AtomicExpr):
     """
     Class to denote a base vector.
-
-    Unicode pretty forms in Python 2 should use the prefix ``u``.
 
     """
 
@@ -395,9 +480,16 @@ class BaseVector(Vector, AtomicExpr):
     def _sympystr(self, printer):
         return self._name
 
+    def _sympyrepr(self, printer):
+        index, system = self._id
+        return printer._print(system) + '.' + system._vector_names[index]
+
     @property
     def free_symbols(self):
         return {self}
+
+    def _eval_conjugate(self):
+        return self
 
 
 class VectorAdd(BasisDependentAdd, Vector):
@@ -458,7 +550,7 @@ class VectorZero(BasisDependentZero, Vector):
         return obj
 
 
-class Cross(Vector):
+class Cross(Expr):
     """
     Represents unevaluated Cross product.
 
@@ -486,7 +578,7 @@ class Cross(Vector):
         obj._expr2 = expr2
         return obj
 
-    def doit(self, **kwargs):
+    def doit(self, **hints):
         return cross(self._expr1, self._expr2)
 
 
@@ -519,7 +611,7 @@ class Dot(Expr):
         obj._expr2 = expr2
         return obj
 
-    def doit(self, **kwargs):
+    def doit(self, **hints):
         return dot(self._expr1, self._expr2)
 
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.printing import pycode, ccode, fcode
 from sympy.external import import_module
 from sympy.utilities.decorator import doctest_depends_on
@@ -52,7 +53,7 @@ class SymPyExpression:  # type: ignore
     Declaration(Variable(c, type=float32, value=2.0)),
     Declaration(Variable(d, type=float32, value=4.0))]
 
-    An example of variable definiton:
+    An example of variable definition:
 
     >>> from sympy.parsing.sym_expr import SymPyExpression
     >>> src2 = '''

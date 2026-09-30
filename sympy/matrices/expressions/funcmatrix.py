@@ -1,3 +1,4 @@
+from __future__ import annotations
 from .matexpr import MatrixExpr
 from sympy.core.function import FunctionClass, Lambda
 from sympy.core.symbol import Dummy
@@ -114,5 +115,5 @@ class FunctionMatrix(MatrixExpr):
         from sympy.concrete.summations import Sum
         return Trace(self).rewrite(Sum).doit()
 
-    def as_real_imag(self):
+    def _eval_as_real_imag(self):
         return (re(Matrix(self)), im(Matrix(self)))

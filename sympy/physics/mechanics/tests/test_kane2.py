@@ -1,4 +1,5 @@
-from sympy.core.backend import cos, Matrix, sin, zeros, tan, pi, symbols
+from __future__ import annotations
+from sympy import cos, Matrix, sin, zeros, tan, pi, symbols
 from sympy.simplify.simplify import simplify
 from sympy.simplify.trigsimp import trigsimp
 from sympy.solvers.solvers import solve
@@ -6,6 +7,7 @@ from sympy.physics.mechanics import (cross, dot, dynamicsymbols,
                                      find_dynamicsymbols, KanesMethod, inertia,
                                      inertia_of_point_mass, Point,
                                      ReferenceFrame, RigidBody)
+from sympy.testing.pytest import raises
 
 
 def test_aux_dep():
@@ -178,6 +180,8 @@ def test_aux_dep():
         u_auxiliary=ua
         )
 
+    assert kane.holonomic_constraints == f_c
+
     # fr, frstar, frstar_steady and kdd(kinematic differential equations).
     (fr, frstar)= kane.kanes_equations(bodyList, forceList)
     frstar_steady = frstar.subs(ud_zero).subs(u_dep_dict).subs(steady_conditions)\
@@ -186,12 +190,38 @@ def test_aux_dep():
 
     assert Matrix(Fr_c).expand() == fr.expand()
     assert Matrix(Fr_star_c.subs(kdd)).expand() == frstar.expand()
-    assert (simplify(Matrix(Fr_star_steady).expand()) ==
-            simplify(frstar_steady.expand()))
+    # These Matrices have some Integer(0) and some Float(0). Running under
+    # SymEngine gives different types of zero.
+    assert (simplify(Matrix(Fr_star_steady).expand()).xreplace({0:0.0}) ==
+            simplify(frstar_steady.expand()).xreplace({0:0.0}))
 
     syms_in_forcing = find_dynamicsymbols(kane.forcing)
     for qdi in qd:
         assert qdi not in syms_in_forcing
+
+    # KanesMethod using nonholonomic instead of velocity_constraints.
+    with raises(ValueError):  # can't pass motion constraints in two ways
+        kane = KanesMethod(
+            N, q_ind= q[:3], u_ind= u[:3], kd_eqs=kindiffs,
+            q_dependent=q[3:], configuration_constraints=-f_c,
+            u_dependent=u[3:], velocity_constraints= f_v,
+            u_auxiliary=ua, nonholonomic_constraints=f_v[:2, :])
+    kane = KanesMethod(
+        N, q_ind= q[:3], u_ind= u[:3], kd_eqs=kindiffs,
+        q_dependent=q[3:], configuration_constraints=-f_c,
+        u_dependent=u[3:],
+        u_auxiliary=ua, nonholonomic_constraints=f_v[:2, :])
+    assert kane.holonomic_constraints == -f_c
+    assert kane.nonholonomic_constraints == f_v[:2, :]
+    # holonomic first when automatically generated
+    # the aux speeds will not be present in the automatically generated form
+    assert kane.velocity_constraints == Matrix([f_v[2, 0].xreplace({ua[2]: 0}),
+                                                f_v[0, 0],
+                                                f_v[1, 0]])
+    assert kane.constraints_jacobian == Matrix([
+        [-r*sin(q[1]),                                0,                                      0, 0, 0, 1],
+        [            0, r*sin(q[1])**2 - q[3]*cos(q[1]), r*sin(q[1])*cos(q[1]) + q[3]*sin(q[1]), 1, 0, 0],
+        [        q[3],                                0,                                      0, 0, 1, 0]])
 
 
 def test_non_central_inertia():
@@ -436,6 +466,10 @@ def test_sub_qdot2():
     u_expr = [C.ang_vel_in(A) & uv for uv in B]
     u_expr += qd[3:]
     kde = [ui - e for ui, e in zip(u, u_expr)]
+    # check that passing empties for constraints works same as passing None
+    km1 = KanesMethod(A, q, u, kde,
+                      velocity_constraints=[], acceleration_constraints=[])
+    fr1, _ = km1.kanes_equations([], forces)
     km1 = KanesMethod(A, q, u, kde)
     fr1, _ = km1.kanes_equations([], forces)
 

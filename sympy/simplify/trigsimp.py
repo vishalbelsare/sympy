@@ -1,3 +1,4 @@
+from __future__ import annotations
 from collections import defaultdict
 from functools import reduce
 
@@ -5,12 +6,14 @@ from sympy.core import (sympify, Basic, S, Expr, factor_terms,
                         Mul, Add, bottom_up)
 from sympy.core.cache import cacheit
 from sympy.core.function import (count_ops, _mexpand, FunctionClass, expand,
-                                 expand_mul, Derivative)
-from sympy.core.numbers import I, Integer, igcd
+                                 expand_mul, _coeff_isneg, Derivative)
+from sympy.core.numbers import I, Integer
+from sympy.core.intfunc import igcd
 from sympy.core.sorting import _nodes
 from sympy.core.symbol import Dummy, symbols, Wild
 from sympy.external.gmpy import SYMPY_INTS
 from sympy.functions import sin, cos, exp, cosh, tanh, sinh, tan, cot, coth
+from sympy.functions import atan2
 from sympy.functions.elementary.hyperbolic import HyperbolicFunction
 from sympy.functions.elementary.trigonometric import TrigonometricFunction
 from sympy.polys import Poly, factor, cancel, parallel_poly_from_expr
@@ -22,7 +25,6 @@ from sympy.strategies.core import identity
 from sympy.strategies.tree import greedy
 from sympy.utilities.iterables import iterable
 from sympy.utilities.misc import debug
-
 
 def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
                       polynomial=False):
@@ -55,8 +57,8 @@ def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
     A number is used to indicate that the search space should be increased.
     A function is used to indicate that said function is likely to occur in a
     simplified expression.
-    An iterable is used indicate that func(var1 + var2 + ...) is likely to
-    occur in a simplified .
+    An iterable is used to indicate that func(var1 + var2 + ...) is likely to
+    occur in a simplified expression.
     An additional generator also indicates that it is likely to occur.
     (See examples below).
 
@@ -178,7 +180,7 @@ def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
     # or tan(n*x), with n an integer. Suppose first there are no tan terms.
     # The ideal [sin(x)**2 + cos(x)**2 - 1] is geometrically prime, since
     # X**2 + Y**2 - 1 is irreducible over CC.
-    # Now, if we have a generator sin(n*x), than we can, using trig identities,
+    # Now, if we have a generator sin(n*x), then we can, using trig identities,
     # express sin(n*x) as a polynomial in sin(x) and cos(x). We can add this
     # relation to the ideal, preserving geometric primality, since the quotient
     # ring is unchanged.
@@ -257,8 +259,8 @@ def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
         """
         # First parse the hints
         n, funcs, iterables, extragens = parse_hints(hints)
-        debug('n=%s' % n, 'funcs:', funcs, 'iterables:',
-              iterables, 'extragens:', extragens)
+        debug('n=%s   funcs: %s   iterables: %s    extragens: %s',
+              (funcs, iterables, extragens))
 
         # We just add the extragens to gens and analyse them as before
         gens = list(gens)
@@ -284,7 +286,7 @@ def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
         res = [] # the ideal
 
         for key, val in trigdict.items():
-            # We have now assembeled a dictionary. Its keys are common
+            # We have now assembled a dictionary. Its keys are common
             # arguments in trigonometric expressions, and values are lists of
             # pairs (fn, coeff). x0, (fn, coeff) in trigdict means that we
             # need to deal with fn(coeff*x0). We take the rational gcd of the
@@ -310,8 +312,7 @@ def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
                     fs.add(c)
                     fs.add(s)
             for fn in fs:
-                for k in range(1, n + 1):
-                    terms.append((fn, k))
+                terms.extend((fn, k) for k in range(1, n + 1))
             extra = []
             for fn, v in terms:
                 if fn == tan:
@@ -426,29 +427,87 @@ def trigsimp_groebner(expr, hints=[], quick=False, order="grlex",
 _trigs = (TrigonometricFunction, HyperbolicFunction)
 
 
-def trigsimp(expr, **opts):
-    """
-    reduces expression by using known trig identities
+def _trigsimp_inverse(rv):
 
-    Explanation
-    ===========
+    def check_args(x, y):
+        try:
+            return x.args[0] == y.args[0]
+        except IndexError:
+            return False
 
-    method:
-    - Determine the method to use. Valid choices are 'matching' (default),
-    'groebner', 'combined', and 'fu'. If 'matching', simplify the
-    expression recursively by targeting common patterns. If 'groebner', apply
-    an experimental groebner basis algorithm. In this case further options
-    are forwarded to ``trigsimp_groebner``, please refer to its docstring.
-    If 'combined', first run the groebner basis algorithm with small
-    default parameters, then run the 'matching' algorithm. 'fu' runs the
-    collection of trigonometric transformations described by Fu, et al.
-    (see the `fu` docstring).
+    def f(rv):
+        # for simple functions
+        g = getattr(rv, 'inverse', None)
+        if (g is not None and isinstance(rv.args[0], g()) and
+                isinstance(g()(1), TrigonometricFunction)):
+            return rv.args[0].args[0]
 
+        # for atan2 simplifications, harder because atan2 has 2 args
+        if isinstance(rv, atan2):
+            y, x = rv.args
+            if _coeff_isneg(y):
+                return -f(atan2(-y, x))
+            elif _coeff_isneg(x):
+                return S.Pi - f(atan2(y, -x))
+
+            if check_args(x, y):
+                if isinstance(y, sin) and isinstance(x, cos):
+                    return x.args[0]
+                if isinstance(y, cos) and isinstance(x, sin):
+                    return S.Pi / 2 - x.args[0]
+
+        return rv
+
+    return bottom_up(rv, f)
+
+
+def trigsimp(expr, inverse=False, **opts):
+    """Returns a reduced expression by using known trig identities.
+
+    While ``trigsimp`` primarily simplifies trigonometric and hyperbolic
+    expressions, it also performs general algebraic simplifications on
+    non-trigonometric parts. This can lead to broader simplification
+    beyond just trigonometric identities, including factoring and term
+    cancellation, which may make its output resemble ``simplify``.
+
+    For targeted trigonometric simplifications that leave other algebraic
+    components untouched, consider using :func:`~sympy.simplify.fu.fu`.
+
+    Parameters
+    ==========
+
+    inverse : bool, optional
+        If ``inverse=True``, it will be assumed that a composition of inverse
+        functions, such as sin and asin, can be cancelled in any order.
+        For example, ``asin(sin(x))`` will yield ``x`` without checking whether
+        x belongs to the set where this relation is true. The default is False.
+
+    method : string, optional
+        Specifies the method to use. Valid choices are:
+
+        - ``'matching'``, default
+        - ``'groebner'``
+        - ``'combined'``
+        - ``'fu'``
+        - ``'old'``
+
+        If ``'matching'``, simplify the expression recursively by targeting
+        common patterns. If ``'groebner'``, apply an experimental groebner
+        basis algorithm. In this case further options are forwarded to
+        ``trigsimp_groebner``, please refer to its docstring. If ``'combined'``,
+        it first runs the groebner basis algorithm with small default parameters,
+        then runs the ``'matching'`` algorithm. If ``'fu'``, run the collection
+        of trigonometric transformations described by Fu, et al. (see the
+        :py:func:`~sympy.simplify.fu.fu` docstring). If ``'old'``, the original
+        SymPy trig simplification function is run.
+    opts :
+        Optional keyword arguments passed to the method. See each method's
+        function docstring for details.
 
     Examples
     ========
 
-    >>> from sympy import trigsimp, sin, cos, log
+    >>> from sympy import trigsimp, sin, cos, log, Symbol
     >>> from sympy.abc import x
     >>> e = 2*sin(x)**2 + 2*cos(x)**2
     >>> trigsimp(e)
@@ -459,10 +518,26 @@ def trigsimp(expr, **opts):
     >>> trigsimp(log(e))
     log(2)
 
-    Using `method="groebner"` (or `"combined"`) might lead to greater
-    simplification.
+    Note that `trigsimp` also performs general algebraic simplifications on
+    non-trigonometric parts of the expression:
 
-    The old trigsimp routine can be accessed as with method 'old'.
+    >>> x = Symbol('x')
+    >>> expr = (x**2 - 1)/(x - 1) + sin(x)**2 + cos(x)**2
+    >>> trigsimp(expr)
+    x + 2
+
+    For a more targeted trigonometric simplification, such as only simplifying
+    `sin(x)**2 + cos(x)**2` to `1` without affecting `(x**2 - 1)/(x - 1)`,
+    you can use functions from the `sympy.simplify.fu` module:
+
+    >>> from sympy.simplify.fu import TR5
+    >>> TR5(expr)
+    1 + (x**2 - 1)/(x - 1)
+
+    Using ``method='groebner'`` (or ``method='combined'``) might lead to
+    greater simplification.
+
+    The old trigsimp routine can be accessed as with method ``method='old'``.
 
     >>> from sympy import coth, tanh
     >>> t = 3*tanh(x)**7 - 2/coth(x)**7
@@ -471,6 +546,10 @@ def trigsimp(expr, **opts):
     >>> trigsimp(t)
     tanh(x)**7
 
+    See Also
+    ========
+
+    sympy.simplify.fu.fu: pure trigonometric transformations.
     """
     from sympy.simplify.fu import fu
 
@@ -510,7 +589,13 @@ def trigsimp(expr, **opts):
         'old': lambda x: trigsimp_old(x, **opts),
                    }[method]
 
-    return trigsimpfunc(expr)
+    # TODO issue 17778 and others can be solved by using expr.together()
+    # but this leads to other failure; investigate
+    expr_simplified = trigsimpfunc(expr)
+    if inverse:
+        expr_simplified = _trigsimp_inverse(expr_simplified)
+
+    return expr_simplified
 
 
 def exptrigsimp(expr):
@@ -535,7 +620,13 @@ def exptrigsimp(expr):
         # functions
         choices = [e]
         if e.has(*_trigs):
-            choices.append(e.rewrite(exp))
+            op = e.rewrite(exp)
+            # if e is an Add, we can try to factor it
+            # helps with expressions with leading factors
+            if e.is_Add:
+                choices.append(factor_terms(op))
+            else:
+                choices.append(op)
         choices.append(e.rewrite(cos))
         return min(*choices, key=count_ops)
     newexpr = bottom_up(expr, exp_trig)
@@ -680,7 +771,7 @@ def trigsimp_old(expr, *, first=True, **opts):
                 d = separatevars(d, dict=True) or d
             if isinstance(d, dict):
                 expr = 1
-                for k, v in d.items():
+                for v in d.values():
                     # remove hollow factoring
                     was = v
                     v = expand_mul(v)
@@ -1058,7 +1149,7 @@ def __trigsimp(expr, deep=False):
             raise TypeError
         fnew = factor(new)
         if fnew != new:
-            new = sorted([new, factor(new)], key=count_ops)[0]
+            new = min([new, factor(new)], key=count_ops)
         # if all exp that were introduced disappeared then accept it
         if not (new.atoms(exp) - e):
             expr = new
@@ -1072,7 +1163,7 @@ def __trigsimp(expr, deep=False):
 def futrig(e, *, hyper=True, **kwargs):
     """Return simplified ``e`` using Fu-like transformations.
     This is not the "Fu" algorithm. This is called by default
-    from ``trigsimp``. By default, hyperbolics subexpressions
+    from ``trigsimp``. By default, hyperbolic subexpressions
     will be simplified, but this can be disabled by setting
     ``hyper=False``.
 

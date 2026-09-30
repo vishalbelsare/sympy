@@ -1,8 +1,11 @@
+from __future__ import annotations
+
+from typing import overload, TYPE_CHECKING
+
 from operator import attrgetter
-from typing import Tuple as tTuple, Type
 from collections import defaultdict
 
-from sympy.utilities.exceptions import SymPyDeprecationWarning
+from sympy.utilities.exceptions import sympy_deprecation_warning
 
 from .sympify import _sympify as _sympify_, sympify
 from .basic import Basic
@@ -16,6 +19,13 @@ from sympy.multipledispatch.dispatcher import (Dispatcher,
     str_signature, RaiseNotImplementedError)
 
 
+if TYPE_CHECKING:
+    from sympy.core.expr import Expr
+    from sympy.core.add import Add
+    from sympy.core.mul import Mul
+    from sympy.logic.boolalg import Boolean, And, Or
+
+
 class AssocOp(Basic):
     """ Associative operations, can separate noncommutative and
     commutative parts.
@@ -26,6 +36,12 @@ class AssocOp(Basic):
 
     This is an abstract base class, concrete derived classes must define
     the attribute `identity`.
+
+    .. deprecated:: 1.7
+
+       Using arguments that aren't subclasses of :class:`~.Expr` in core
+       operators (:class:`~.Mul`, :class:`~.Add`, and :class:`~.Pow`) is
+       deprecated. See :ref:`non-expr-args-deprecated` for details.
 
     Parameters
     ==========
@@ -39,9 +55,9 @@ class AssocOp(Basic):
 
     # for performance reason, we don't let is_commutative go to assumptions,
     # and keep it right here
-    __slots__ = ('is_commutative',)  # type: tTuple[str, ...]
+    __slots__: tuple[str, ...] = ('is_commutative',)
 
-    _args_type = None  # type: Type[Basic]
+    _args_type: type[Basic] | None = None
 
     @cacheit
     def __new__(cls, *args, evaluate=None, _sympify=True):
@@ -58,13 +74,22 @@ class AssocOp(Basic):
                 raise TypeError("Relational cannot be used in %s" % cls.__name__)
 
             # This should raise TypeError once deprecation period is over:
-            if not all(isinstance(arg, typ) for arg in args):
-                SymPyDeprecationWarning(
-                    feature="Add/Mul with non-Expr args",
-                    useinstead="Expr args",
-                    issue=19445,
-                    deprecated_since_version="1.7"
-                ).warn()
+            for arg in args:
+                if not isinstance(arg, typ):
+                    sympy_deprecation_warning(
+                        f"""
+
+Using non-Expr arguments in {cls.__name__} is deprecated (in this case, one of
+the arguments has type {type(arg).__name__!r}).
+
+If you really did intend to use a multiplication or addition operation with
+this object, use the * or + operator instead.
+
+                        """,
+                        deprecated_since_version="1.7",
+                        active_deprecations_target="non-expr-args-deprecated",
+                        stacklevel=4,
+                    )
 
         if evaluate is None:
             evaluate = global_parameters.evaluate
@@ -213,13 +238,14 @@ class AssocOp(Basic):
         equivalent.
 
         """
+        from .function import _coeff_isneg
         # make sure expr is Expr if pattern is Expr
         from .expr import Expr
         if isinstance(self, Expr) and not isinstance(expr, Expr):
             return None
 
         if repl_dict is None:
-            repl_dict = dict()
+            repl_dict = {}
 
         # handle simple patterns
         if self == expr:
@@ -254,7 +280,10 @@ class AssocOp(Basic):
                 return None
             newexpr = self._combine_inverse(expr, exact)
             if not old and (expr.is_Add or expr.is_Mul):
-                if newexpr.count_ops() > expr.count_ops():
+                check = newexpr
+                if _coeff_isneg(check):
+                    check = -check
+                if check.count_ops() > expr.count_ops():
                     return None
             newpattern = self._new_rawargs(*wild_part)
             return newpattern.matches(newexpr, repl_dict)
@@ -407,8 +436,21 @@ class AssocOp(Basic):
                 args.append(newa)
         return self.func(*args)
 
+    @overload
     @classmethod
-    def make_args(cls, expr):
+    def make_args(cls: type[Add], expr: Expr) -> tuple[Expr, ...]: ... # type: ignore
+    @overload
+    @classmethod
+    def make_args(cls: type[Mul], expr: Expr) -> tuple[Expr, ...]: ... # type: ignore
+    @overload
+    @classmethod
+    def make_args(cls: type[And], expr: Boolean) -> tuple[Boolean, ...]: ... # type: ignore
+    @overload
+    @classmethod
+    def make_args(cls: type[Or], expr: Boolean) -> tuple[Boolean, ...]: ... # type: ignore
+
+    @classmethod
+    def make_args(cls: type[Basic], expr: Basic) -> tuple[Basic, ...]:
         """
         Return a sequence of elements `args` such that cls(*args) == expr
 
@@ -475,15 +517,24 @@ class LatticeOp(AssocOp):
     >>> my_join(1, 2)
     2
 
-    References:
+    References
+    ==========
 
     .. [1] https://en.wikipedia.org/wiki/Lattice_%28order%29
     """
 
     is_commutative = True
 
-    def __new__(cls, *args, **options):
+    def __new__(cls, *args, evaluate=None, **options):
         args = (_sympify_(arg) for arg in args)
+
+        if evaluate is None:
+            evaluate = global_parameters.evaluate
+
+        if not evaluate:
+            obj = super().__new__(cls, *args, evaluate=False, **options)
+            obj._argset = frozenset(args)
+            return obj
 
         try:
             # /!\ args is a generator and _new_args_filter
@@ -527,10 +578,6 @@ class LatticeOp(AssocOp):
             return expr._argset
         else:
             return frozenset([sympify(expr)])
-
-    @staticmethod
-    def _compare_pretty(a, b):
-        return (str(a) > str(b)) - (str(a) < str(b))
 
 
 class AssocOpDispatcher:

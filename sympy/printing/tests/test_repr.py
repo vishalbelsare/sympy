@@ -1,6 +1,9 @@
-from typing import Any, Dict as tDict
+from __future__ import annotations
+from typing import Any
 
-from sympy.testing.pytest import raises
+from sympy import Add, Mul
+from sympy.external.gmpy import GROUND_TYPES
+from sympy.testing.pytest import raises, warns_deprecated_sympy
 from sympy.assumptions.ask import Q
 from sympy.core.function import (Function, WildFunction)
 from sympy.core.numbers import (AlgebraicNumber, Float, Integer, Rational)
@@ -27,11 +30,11 @@ x, y = symbols('x,y')
 
 # eval(srepr(expr)) == expr has to succeed in the right environment. The right
 # environment is the scope of "from sympy import *" for most cases.
-ENV = {"Str": Str}  # type: tDict[str, Any]
+ENV: dict[str, Any] = {"Str": Str}
 exec("from sympy import *", ENV)
 
 
-def sT(expr, string, import_stmt=None):
+def sT(expr, string, import_stmt=None, **kwargs):
     """
     sT := sreprTest
 
@@ -44,7 +47,7 @@ def sT(expr, string, import_stmt=None):
         ENV2 = ENV.copy()
         exec(import_stmt, ENV2)
 
-    assert srepr(expr) == string
+    assert srepr(expr, **kwargs) == string
     assert eval(string, ENV2) == expr
 
 
@@ -57,9 +60,10 @@ def test_printmethod():
 
 def test_Add():
     sT(x + y, "Add(Symbol('x'), Symbol('y'))")
-    assert srepr(x**2 + 1, order='lex') == "Add(Pow(Symbol('x'), Integer(2)), Integer(1))"
+    assert srepr(x**2 + 1, order='lex') == "Add(Integer(1), Pow(Symbol('x'), Integer(2)))"
     assert srepr(x**2 + 1, order='old') == "Add(Integer(1), Pow(Symbol('x'), Integer(2)))"
     assert srepr(sympify('x + 3 - 2', evaluate=False), order='none') == "Add(Symbol('x'), Integer(3), Mul(Integer(-1), Integer(2)))"
+    assert srepr(Add(Add(Add(Integer(1), Integer(2), evaluate=False), Integer(3), evaluate=False), Integer(4), evaluate=False)) == "Add(Add(Add(Integer(1), Integer(2)), Integer(3)), Integer(4))"
 
 
 def test_more_than_255_args_issue_10259():
@@ -140,6 +144,15 @@ def test_empty_Matrix():
     sT(ones(0, 3), "MutableDenseMatrix(0, 3, [])")
     sT(ones(4, 0), "MutableDenseMatrix(4, 0, [])")
     sT(ones(0, 0), "MutableDenseMatrix([])")
+
+
+def test_CharacterTable():
+    from sympy.combinatorics.named_groups import SymmetricGroup
+    tbl = SymmetricGroup(1).character_table()
+    assert srepr(tbl) == "CharacterTable(DomainMatrix([[1]], (1, 1), ZZ), [Permutation(0)])"
+
+    tbl = SymmetricGroup(2).character_table()
+    assert srepr(tbl) == "CharacterTable(DomainMatrix([[1, 1], [1, -1]], (2, 2), ZZ), [Permutation(1), Permutation(0, 1)])"
 
 
 def test_Rational():
@@ -229,9 +242,10 @@ def test_settins():
 
 
 def test_Mul():
-    sT(3*x**3*y, "Mul(Integer(3), Pow(Symbol('x'), Integer(3)), Symbol('y'))")
+    sT(3*x**3*y, "Mul(Integer(3), Symbol('y'), Pow(Symbol('x'), Integer(3)))")
     assert srepr(3*x**3*y, order='old') == "Mul(Integer(3), Symbol('y'), Pow(Symbol('x'), Integer(3)))"
     assert srepr(sympify('(x+4)*2*x*7', evaluate=False), order='none') == "Mul(Add(Symbol('x'), Integer(4)), Integer(2), Symbol('x'), Integer(7))"
+    assert srepr(Mul(Symbol('x'), Integer(2), evaluate=False)) == "Mul(Symbol('x'), Integer(2))"
 
 
 def test_AlgebraicNumber():
@@ -280,9 +294,14 @@ def test_PolynomialRingBase():
 
 
 def test_DMP():
-    assert srepr(DMP([1, 2], ZZ)) == 'DMP([1, 2], ZZ)'
-    assert srepr(ZZ.old_poly_ring(x)([1, 2])) == \
-        "DMP([1, 2], ZZ, ring=GlobalPolynomialRing(ZZ, Symbol('x')))"
+    p1 = DMP([1, 2], ZZ)
+    p2 = ZZ.old_poly_ring(x)([1, 2])
+    if GROUND_TYPES != 'flint':
+        assert srepr(p1) == "DMP_Python([1, 2], ZZ)"
+        assert srepr(p2) == "DMP_Python([1, 2], ZZ)"
+    else:
+        assert srepr(p1) == "DUP_Flint([1, 2], ZZ)"
+        assert srepr(p2) == "DUP_Flint([1, 2], ZZ)"
 
 
 def test_FiniteExtension():
@@ -292,9 +311,11 @@ def test_FiniteExtension():
 
 def test_ExtensionElement():
     A = FiniteExtension(Poly(x**2 + 1, x))
-    assert srepr(A.generator) == \
-        "ExtElem(DMP([1, 0], ZZ, ring=GlobalPolynomialRing(ZZ, Symbol('x'))), FiniteExtension(Poly(x**2 + 1, x, domain='ZZ')))"
-
+    if GROUND_TYPES != 'flint':
+        ans = "ExtElem(DMP_Python([1, 0], ZZ), FiniteExtension(Poly(x**2 + 1, x, domain='ZZ')))"
+    else:
+        ans = "ExtElem(DUP_Flint([1, 0], ZZ), FiniteExtension(Poly(x**2 + 1, x, domain='ZZ')))"
+    assert srepr(A.generator) == ans
 
 def test_BooleanAtom():
     assert srepr(true) == "true"
@@ -336,7 +357,14 @@ def test_Cycle():
 
 def test_Permutation():
     import_stmt = "from sympy.combinatorics import Permutation"
-    sT(Permutation(1, 2), "Permutation(1, 2)", import_stmt)
+    sT(Permutation(1, 2)(3, 4), "Permutation([0, 2, 1, 4, 3])", import_stmt, perm_cyclic=False)
+    sT(Permutation(1, 2)(3, 4), "Permutation(1, 2)(3, 4)", import_stmt, perm_cyclic=True)
+
+    with warns_deprecated_sympy():
+        old_print_cyclic = Permutation.print_cyclic
+        Permutation.print_cyclic = False
+        sT(Permutation(1, 2)(3, 4), "Permutation([0, 2, 1, 4, 3])", import_stmt)
+        Permutation.print_cyclic = old_print_cyclic
 
 def test_dict():
     from sympy.abc import x, y, z

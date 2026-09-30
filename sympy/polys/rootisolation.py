@@ -1,8 +1,10 @@
 """Real and complex root isolation and refinement algorithms. """
+from __future__ import annotations
 
 
 from sympy.polys.densearith import (
-    dup_neg, dup_rshift, dup_rem)
+    dup_neg, dup_rshift, dup_rem,
+    dup_l2_norm_squared)
 from sympy.polys.densebasic import (
     dup_LC, dup_TC, dup_degree,
     dup_strip, dup_reverse,
@@ -16,11 +18,14 @@ from sympy.polys.densetools import (
     dup_eval, dmp_eval_in,
     dup_sign_variations,
     dup_real_imag)
+from sympy.polys.euclidtools import (
+    dup_discriminant)
 from sympy.polys.factortools import (
     dup_factor_list)
 from sympy.polys.polyerrors import (
     RefinementFailed,
-    DomainError)
+    DomainError,
+    PolynomialError)
 from sympy.polys.sqfreetools import (
     dup_sqf_part, dup_sqf_list)
 
@@ -117,12 +122,84 @@ def dup_root_lower_bound(f, K):
               Values of the Positive Roots of Polynomials"
               Journal of Universal Computer Science, Vol. 15, No. 3, 523-537, 2009.
     """
-    bound = dup_root_upper_bound(dup_reverse(f), K)
+    bound = dup_root_upper_bound(dup_reverse(f, K), K)
 
     if bound is not None:
         return 1/bound
     else:
         return None
+
+def dup_cauchy_upper_bound(f, K):
+    """
+    Compute the Cauchy upper bound on the absolute value of all roots of f,
+    real or complex.
+
+    References
+    ==========
+    .. [1] https://en.wikipedia.org/wiki/Geometrical_properties_of_polynomial_roots#Lagrange's_and_Cauchy's_bounds
+    """
+    n = dup_degree(f)
+    if n < 1:
+        raise PolynomialError('Polynomial has no roots.')
+
+    if K.is_ZZ:
+        L = K.get_field()
+        f, K = dup_convert(f, K, L), L
+    elif not K.is_QQ or K.is_RR or K.is_CC:
+        # We need to compute absolute value, and we are not supporting cases
+        # where this would take us outside the domain (or its quotient field).
+        raise DomainError('Cauchy bound not supported over %s' % K)
+    else:
+        f = f[:]
+
+    while K.is_zero(f[-1]):
+        f.pop()
+    if len(f) == 1:
+        # Monomial. All roots are zero.
+        return K.zero
+
+    lc = f[0]
+    return K.one + max(abs(n / lc) for n in f[1:])
+
+def dup_cauchy_lower_bound(f, K):
+    """Compute the Cauchy lower bound on the absolute value of all non-zero
+       roots of f, real or complex."""
+    g = dup_reverse(f, K)
+    if len(g) < 2:
+        raise PolynomialError('Polynomial has no non-zero roots.')
+    if K.is_ZZ:
+        K = K.get_field()
+    b = dup_cauchy_upper_bound(g, K)
+    return K.one / b
+
+def dup_mignotte_sep_bound_squared(f, K):
+    """
+    Return the square of the Mignotte lower bound on separation between
+    distinct roots of f. The square is returned so that the bound lies in
+    K or its quotient field.
+
+    References
+    ==========
+
+    .. [1] Mignotte, Maurice. "Some useful bounds." Computer algebra.
+        Springer, Vienna, 1982. 259-263.
+        https://people.dm.unipi.it/gianni/AC-EAG/Mignotte.pdf
+    """
+    n = dup_degree(f)
+    if n < 2:
+        raise PolynomialError('Polynomials of degree < 2 have no distinct roots.')
+
+    if K.is_ZZ:
+        L = K.get_field()
+        f, K = dup_convert(f, K, L), L
+    elif not K.is_QQ or K.is_RR or K.is_CC:
+        # We need to compute absolute value, and we are not supporting cases
+        # where this would take us outside the domain (or its quotient field).
+        raise DomainError('Mignotte bound not supported over %s' % K)
+
+    D = dup_discriminant(f, K)
+    l2sq = dup_l2_norm_squared(f, K)
+    return K(3)*K.abs(D) / ( K(n)**(n+1) * l2sq**(n-1) )
 
 def _mobius_from_interval(I, field):
     """Convert an open interval to a Mobius transform. """
@@ -181,7 +258,7 @@ def dup_step_refine_real_root(f, M, K, fast=False):
     if k == 1:
         a, b, c, d = a1, b1, c1, d1
     else:
-        f = dup_shift(dup_reverse(g), K.one, K)
+        f = dup_shift(dup_reverse(g, K), K.one, K)
 
         if not dup_eval(f, K.zero, K):
             f = dup_rshift(f, 1, K)
@@ -236,8 +313,8 @@ def dup_outer_refine_real_root(f, s, t, K, eps=None, steps=None, disjoint=None, 
     """Refine a positive root of `f` given an interval `(s, t)`. """
     a, b, c, d = _mobius_from_interval((s, t), K.get_field())
 
-    f = dup_transform(f, dup_strip([a, b]),
-                         dup_strip([c, d]), K)
+    f = dup_transform(f, dup_strip([a, b], K),
+                         dup_strip([c, d], K), K)
 
     if dup_sign_variations(f, K) != 1:
         raise RefinementFailed("there should be exactly one root in (%s, %s) interval" % (s, t))
@@ -347,7 +424,7 @@ def dup_inner_isolate_real_roots(f, K, eps=None, fast=False):
             a2, b2, c2, d2 = b, a + b, d, c + d
 
             if k2 > 1:
-                f2 = dup_shift(dup_reverse(f), K.one, K)
+                f2 = dup_shift(dup_reverse(f, K), K.one, K)
 
                 if not dup_TC(f2, K):
                     f2 = dup_rshift(f2, 1, K)
@@ -365,7 +442,7 @@ def dup_inner_isolate_real_roots(f, K, eps=None, fast=False):
                 continue
 
             if f1 is None:
-                f1 = dup_shift(dup_reverse(f), K.one, K)
+                f1 = dup_shift(dup_reverse(f, K), K.one, K)
 
                 if not dup_TC(f1, K):
                     f1 = dup_rshift(f1, 1, K)
@@ -380,7 +457,7 @@ def dup_inner_isolate_real_roots(f, K, eps=None, fast=False):
                 continue
 
             if f2 is None:
-                f2 = dup_shift(dup_reverse(f), K.one, K)
+                f2 = dup_shift(dup_reverse(f, K), K.one, K)
 
                 if not dup_TC(f2, K):
                     f2 = dup_rshift(f2, 1, K)
@@ -429,9 +506,7 @@ def dup_inner_isolate_positive_roots(f, K, eps=None, inf=None, sup=None, fast=Fa
             if result is not None:
                 results.append(result)
     elif not mobius:
-        for f, M in roots:
-            u, v = _mobius_to_interval(M, F)
-            results.append((u, v))
+        results.extend(_mobius_to_interval(M, F) for _, M in roots)
     else:
         results = roots
 
@@ -555,7 +630,7 @@ def dup_isolate_real_roots(f, K, eps=None, inf=None, sup=None, basis=False, fast
     return sorted(I_neg + I_zero + I_pos)
 
 def dup_isolate_real_roots_list(polys, K, eps=None, inf=None, sup=None, strict=False, basis=False, fast=False):
-    """Isolate real roots of a list of square-free polynomial using Vincent-Akritas-Strzebonski (VAS) CF approach.
+    """Isolate real roots of a list of polynomial using Vincent-Akritas-Strzebonski (VAS) CF approach.
 
        References
        ==========
@@ -596,11 +671,7 @@ def dup_isolate_real_roots_list(polys, K, eps=None, inf=None, sup=None, strict=F
             else:
                 factors_dict[f][i] = k
 
-    factors_list = []
-
-    for f, indices in factors_dict.items():
-        factors_list.append((list(f), indices))
-
+    factors_list = [(list(f), indices) for f, indices in factors_dict.items()]
     I_neg, I_pos = _real_isolate_and_disjoin(factors_list, K, eps=eps,
         inf=inf, sup=sup, strict=strict, basis=basis, fast=fast)
 
@@ -691,12 +762,11 @@ def _real_isolate_and_disjoin(factors, K, eps=None, inf=None, sup=None, strict=F
     I_neg = [ (_mobius_to_interval(M, field), k, f) for (_, M, k, f) in I_neg ]
     I_pos = [ (_mobius_to_interval(M, field), k, f) for (_, M, k, f) in I_pos ]
 
+    I_neg = [((-v, -u), k, f) for ((u, v), k, f) in I_neg]
+
     if not basis:
-        I_neg = [ ((-v, -u), k) for ((u, v), k, _) in I_neg ]
-        I_pos = [ (( u, v), k) for ((u, v), k, _) in I_pos ]
-    else:
-        I_neg = [ ((-v, -u), k, f) for ((u, v), k, f) in I_neg ]
-        I_pos = [ (( u, v), k, f) for ((u, v), k, f) in I_pos ]
+        I_neg = [((u, v), k) for ((u, v), k, _) in I_neg]
+        I_pos = [((u, v), k) for ((u, v), k, _) in I_pos]
 
     return I_neg, I_pos
 
@@ -1196,7 +1266,7 @@ def _reverse_intervals(intervals):
 
 def _winding_number(T, field):
     """Compute the winding number of the input polynomial, i.e. the number of roots. """
-    return int(sum([ field(*_values[t][i]) for t, i in T ]) / field(2))
+    return int(sum(field(*_values[t][i]) for t, i in T) / field(2))
 
 def dup_count_complex_roots(f, K, inf=None, sup=None, exclude=None):
     """Count all roots in [u + v*I, s + t*I] rectangle using Collins-Krandick algorithm. """
@@ -1212,7 +1282,7 @@ def dup_count_complex_roots(f, K, inf=None, sup=None, exclude=None):
 
     if inf is None or sup is None:
         _, lc = dup_degree(f), abs(dup_LC(f, F))
-        B = 2*max([ F.quo(abs(c), lc) for c in f ])
+        B = 2*max(F.quo(abs(c), lc) for c in f)
 
     if inf is None:
         (u, v) = (-B, -B)
@@ -1521,7 +1591,7 @@ def dup_isolate_complex_roots_sqf(f, K, eps=None, inf=None, sup=None, blackbox=F
     f = dup_convert(f, K, F)
 
     lc = abs(dup_LC(f, F))
-    B = 2*max([ F.quo(abs(c), lc) for c in f ])
+    B = 2*max(F.quo(abs(c), lc) for c in f)
 
     (u, v), (s, t) = (-B, F.zero), (B, B)
 
@@ -1674,8 +1744,8 @@ class RealInterval:
 
             a, b, c, d = _mobius_from_interval((s, t), dom.get_field())
 
-            f = dup_transform(f, dup_strip([a, b]),
-                                 dup_strip([c, d]), dom)
+            f = dup_transform(f, dup_strip([a, b], dom),
+                                 dup_strip([c, d], dom), dom)
 
             self.mobius = a, b, c, d
         else:
@@ -1694,7 +1764,7 @@ class RealInterval:
         return (i.mobius + (i.neg,), i.f, i.dom)
 
     def __eq__(self, other):
-        if type(other) != type(self):
+        if type(other) is not type(self):
             return False
         return self.args == other.args
 
@@ -1967,7 +2037,7 @@ class ComplexInterval:
         return (i.a, i.b, i.I, i.Q, i.F1, i.F2, i.f1, i.f2, i.dom, i.conj)
 
     def __eq__(self, other):
-        if type(other) != type(self):
+        if type(other) is not type(self):
             return False
         return self.args == other.args
 

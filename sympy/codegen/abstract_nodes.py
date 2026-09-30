@@ -1,6 +1,7 @@
 """This module provides containers for python objects that are valid
 printing targets but are not a subclass of SymPy's Printable.
 """
+from __future__ import annotations
 
 
 from sympy.core.containers import Tuple
@@ -13,3 +14,6 @@ class List(Tuple):
             return self == List(*other)
         else:
             return self.args == other
+
+    def __hash__(self):
+        return super().__hash__()

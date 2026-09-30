@@ -88,6 +88,7 @@ total multiplicity available for that component (u).  This saves
 time that would be spent skipping over zeros.
 
 """
+from __future__ import annotations
 
 class PartComponent:
     """Internal class used in support of the multiset partitions
@@ -243,10 +244,9 @@ def multiset_partitions_taocp(multiplicities):
     while True:
         while True:
             # Step M2 (Subtract v from u)
-            j = a
             k = b
             x = False
-            while j < b:
+            for j in range(a, b):
                 pstack[k].u = pstack[j].u - pstack[j].v
                 if pstack[k].u == 0:
                     x = True
@@ -259,7 +259,6 @@ def multiset_partitions_taocp(multiplicities):
                     pstack[k].c = pstack[j].c
                     pstack[k].v = pstack[k].u
                     k = k + 1
-                j = j + 1
                 # Note: x is True iff v has changed
 
             # Step M3 (Push if nonzero.)
@@ -538,7 +537,7 @@ class MultisetPartitionTraverser():
         decision is made to fail, it must be accurate, otherwise the
         enumeration will miss some partitions.  But, it is OK not to
         capture all the possible failures -- if a part is passed that
-        shouldn't be, the resulting too-large partitions are filtered
+        should not be, the resulting too-large partitions are filtered
         by the enumeration one level up.  However, as is usual in
         constrained enumerations, failing early is advantageous.
 
@@ -624,7 +623,7 @@ class MultisetPartitionTraverser():
         """
 
         if amt == 1:
-            # In this case we always need to increment, *before*
+            # In this case we always need to decrement, *before*
             # enforcing the "sufficient unallocated multiplicity"
             # constraint.  Easiest for this is just to call the
             # regular decrement method.
@@ -668,7 +667,7 @@ class MultisetPartitionTraverser():
         Parameters
         ==========
 
-         part
+        part
             part to be decremented (topmost part on the stack)
 
         ub
@@ -774,7 +773,7 @@ class MultisetPartitionTraverser():
         See Also
         ========
 
-        multiset_partitions_taocp():
+        multiset_partitions_taocp:
             which provides the same result as this method, but is
             about twice as fast.  Hence, enum_all is primarily useful
             for testing.  Also see the function for a discussion of
@@ -842,18 +841,15 @@ class MultisetPartitionTraverser():
             return
         self._initialize_enumeration(multiplicities)
         while True:
-            good_partition = True
             while self.spread_part_multiplicity():
-                self.db_trace("spread 1")
+                self.db_trace('spread 1')
                 if self.lpart >= ub:
                     self.discarded += 1
-                    good_partition = False
-                    self.db_trace("  Discarding")
+                    self.db_trace('  Discarding')
                     self.lpart = ub - 2
                     break
-
-            # M4  Visit a partition
-            if good_partition:
+            else:
+                # M4  Visit a partition
                 state = [self.f, self.lpart, self.pstack]
                 yield state
 

@@ -1,6 +1,8 @@
+from __future__ import annotations
 from .vector import Vector, _check_vector
 from .frame import _check_frame
 from warnings import warn
+from sympy.utilities.misc import filldedent
 
 __all__ = ['Point']
 
@@ -32,7 +34,8 @@ class Point:
     >>> O.acc(N)
     u1'*N.x + u2'*N.y + u3'*N.z
 
-    symbols() can be used to create multiple Points in a single step, for example:
+    ``symbols()`` can be used to create multiple Points in a single step, for
+    example:
 
     >>> from sympy.physics.vector import Point, ReferenceFrame, dynamicsymbols
     >>> from sympy.physics.vector import init_vprinting
@@ -89,23 +92,23 @@ class Point:
         Notes
         =====
 
-        It isn't clear if num = 1 or num = 2 actually works because the keys to
-        ``_vel_dict`` and ``_acc_dict`` are :class:`ReferenceFrame` objects which
-        do not have the ``_pdlist`` attribute.
+        It is not clear if num = 1 or num = 2 actually works because the keys
+        to ``_vel_dict`` and ``_acc_dict`` are :class:`ReferenceFrame` objects
+        which do not have the ``_pdlist`` attribute.
 
         """
         outlist = [[self]]
         oldlist = [[]]
         while outlist != oldlist:
-            oldlist = outlist[:]
-            for i, v in enumerate(outlist):
+            oldlist = outlist.copy()
+            for v in outlist:
                 templist = v[-1]._pdlist[num].keys()
-                for i2, v2 in enumerate(templist):
+                for v2 in templist:
                     if not v.__contains__(v2):
                         littletemplist = v + [v2]
                         if not outlist.__contains__(littletemplist):
                             outlist.append(littletemplist)
-        for i, v in enumerate(oldlist):
+        for v in oldlist:
             if v[-1] != other:
                 outlist.remove(v)
         outlist.sort(key=len)
@@ -150,7 +153,7 @@ class Point:
         >>> B = ReferenceFrame('B')
         >>> B.set_ang_vel(N, 5 * B.y)
         >>> O = Point('O')
-        >>> P = O.locatenew('P', q * B.x)
+        >>> P = O.locatenew('P', q * B.x + q2 * B.y)
         >>> P.set_vel(B, qd * B.x + q2d * B.y)
         >>> O.set_vel(N, 0)
         >>> P.a1pt_theory(O, N, B)
@@ -167,8 +170,8 @@ class Point:
         a2 = self.acc(interframe)
         omega = interframe.ang_vel_in(outframe)
         alpha = interframe.ang_acc_in(outframe)
-        self.set_acc(outframe, a2 + 2 * (omega ^ v) + a1 + (alpha ^ dist) +
-                (omega ^ (omega ^ dist)))
+        self.set_acc(outframe, a2 + 2 * (omega.cross(v)) + a1 +
+                     (alpha.cross(dist)) + (omega.cross(omega.cross(dist))))
         return self.acc(outframe)
 
     def a2pt_theory(self, otherpoint, outframe, fixedframe):
@@ -216,7 +219,8 @@ class Point:
         a = otherpoint.acc(outframe)
         omega = fixedframe.ang_vel_in(outframe)
         alpha = fixedframe.ang_acc_in(outframe)
-        self.set_acc(outframe, a + (alpha ^ dist) + (omega ^ (omega ^ dist)))
+        self.set_acc(outframe, a + (alpha.cross(dist)) +
+                     (omega.cross(omega.cross(dist))))
         return self.acc(outframe)
 
     def acc(self, frame):
@@ -226,7 +230,8 @@ class Point:
         ==========
 
         frame : ReferenceFrame
-            The frame in which the returned acceleration vector will be defined in
+            The frame in which the returned acceleration vector will be defined
+            in.
 
         Examples
         ========
@@ -242,7 +247,7 @@ class Point:
 
         _check_frame(frame)
         if not (frame in self._acc_dict):
-            if self._vel_dict[frame] != 0:
+            if self.vel(frame) != 0:
                 return (self._vel_dict[frame]).dt(frame)
             else:
                 return Vector(0)
@@ -431,7 +436,7 @@ class Point:
         >>> B = ReferenceFrame('B')
         >>> B.set_ang_vel(N, 5 * B.y)
         >>> O = Point('O')
-        >>> P = O.locatenew('P', q * B.x)
+        >>> P = O.locatenew('P', q * B.x + q2 * B.y)
         >>> P.set_vel(B, qd * B.x + q2d * B.y)
         >>> O.set_vel(N, 0)
         >>> P.v1pt_theory(O, N, B)
@@ -446,7 +451,7 @@ class Point:
         v1 = self.vel(interframe)
         v2 = otherpoint.vel(outframe)
         omega = interframe.ang_vel_in(outframe)
-        self.set_vel(outframe, v1 + v2 + (omega ^ dist))
+        self.set_vel(outframe, v1 + v2 + (omega.cross(dist)))
         return self.vel(outframe)
 
     def v2pt_theory(self, otherpoint, outframe, fixedframe):
@@ -493,7 +498,7 @@ class Point:
         dist = self.pos_from(otherpoint)
         v = otherpoint.vel(outframe)
         omega = fixedframe.ang_vel_in(outframe)
-        self.set_vel(outframe, v + (omega ^ dist))
+        self.set_vel(outframe, v + (omega.cross(dist)))
         return self.vel(outframe)
 
     def vel(self, frame):
@@ -515,7 +520,13 @@ class Point:
         >>> p1.vel(N)
         10*N.x
 
-        Velocities will be automatically calculated if possible, otherwise a ``ValueError`` will be returned. If it is possible to calculate multiple different velocities from the relative points, the points defined most directly relative to this point will be used. In the case of inconsistent relative positions of points, incorrect velocities may be returned. It is up to the user to define prior relative positions and velocities of points in a self-consistent way.
+        Velocities will be automatically calculated if possible, otherwise a
+        ``ValueError`` will be returned. If it is possible to calculate
+        multiple different velocities from the relative points, the points
+        defined most directly relative to this point will be used. In the case
+        of inconsistent relative positions of points, incorrect velocities may
+        be returned. It is up to the user to define prior relative positions
+        and velocities of points in a self-consistent way.
 
         >>> p = Point('p')
         >>> q = dynamicsymbols('q')
@@ -534,7 +545,7 @@ class Point:
             visited = []
             queue = [self]
             candidate_neighbor = []
-            while queue: #BFS to find nearest point
+            while queue:  # BFS to find nearest point
                 node = queue.pop(0)
                 if node not in visited:
                     visited.append(node)
@@ -542,39 +553,40 @@ class Point:
                         if neighbor in visited:
                             continue
                         try:
-                            neighbor_pos.express(frame) #Checks if pos vector is valid
+                            # Checks if pos vector is valid
+                            neighbor_pos.express(frame)
                         except ValueError:
                             continue
                         if neighbor in queue:
                             is_cyclic = True
-                        try :
-                            neighbor_velocity = neighbor._vel_dict[frame] #Checks if point has its vel defined in req frame
+                        try:
+                            # Checks if point has its vel defined in req frame
+                            neighbor_velocity = neighbor._vel_dict[frame]
                         except KeyError:
                             queue.append(neighbor)
                             continue
                         candidate_neighbor.append(neighbor)
                         if not valid_neighbor_found:
-                            vel = None
-                            for f in self.pos_from(neighbor).args:
-                                if f[1] in self._vel_dict.keys():
-                                    if self._vel_dict[f[1]] != 0:
-                                        vel = self._vel_dict[f[1]]
-                                        break
-                            if vel is None:
-                                vel = self.pos_from(neighbor).dt(frame)
-                            self.set_vel(frame, vel + neighbor_velocity)
+                            self.set_vel(frame, self.pos_from(neighbor).dt(frame) + neighbor_velocity)
                             valid_neighbor_found = True
             if is_cyclic:
-                warn('Kinematic loops are defined among the positions of points. This is likely not desired and may cause errors in your calculations.')
+                warn(filldedent("""
+                Kinematic loops are defined among the positions of points. This
+                is likely not desired and may cause errors in your calculations.
+                """))
             if len(candidate_neighbor) > 1:
-                warn('Velocity automatically calculated based on point ' +
-                    candidate_neighbor[0].name + ' but it is also possible from points(s):' +
-                    str(candidate_neighbor[1:]) + '. Velocities from these points are not necessarily the same. This may cause errors in your calculations.')
+                warn(filldedent(f"""
+                Velocity of {self.name} automatically calculated based on point
+                {candidate_neighbor[0].name} but it is also possible from
+                points(s): {str(candidate_neighbor[1:])}. Velocities from these
+                points are not necessarily the same. This may cause errors in
+                your calculations."""))
             if valid_neighbor_found:
                 return self._vel_dict[frame]
             else:
-                raise ValueError('Velocity of point ' + self.name + ' has not been'
-                             ' defined in ReferenceFrame ' + frame.name)
+                raise ValueError(filldedent(f"""
+                Velocity of point {self.name} has not been defined in
+                ReferenceFrame {frame.name}."""))
 
         return self._vel_dict[frame]
 
@@ -612,8 +624,11 @@ class Point:
         (N.x, A.y)
 
         """
-        partials = [self.vel(frame).diff(speed, frame, var_in_dcm=False) for
-                    speed in gen_speeds]
+
+        from sympy.physics.vector.functions import partial_velocity
+
+        vel = self.vel(frame)
+        partials = partial_velocity([vel], gen_speeds, frame)[0]
 
         if len(partials) == 1:
             return partials[0]

@@ -5,6 +5,7 @@ The functions defined in this module allows the user to express functions such a
 as a SymPy function for symbolic manipulation.
 """
 
+from __future__ import annotations
 from sympy.codegen.ast import (
     Attribute, CodeBlock, FunctionCall, Node, none, String,
     Token, _mk_Tuple, Variable
@@ -14,6 +15,7 @@ from sympy.core.containers import Tuple
 from sympy.core.expr import Expr
 from sympy.core.function import Function
 from sympy.core.numbers import Float, Integer
+from sympy.core.symbol import Str
 from sympy.core.sympify import sympify
 from sympy.logic import true, false
 from sympy.utilities.iterables import iterable
@@ -45,7 +47,7 @@ class Program(Token):
     end program
 
     """
-    __slots__ = ('name', 'body')
+    __slots__ = _fields = ('name', 'body')
     _construct_name = String
     _construct_body = staticmethod(lambda body: CodeBlock(*body))
 
@@ -66,7 +68,7 @@ class use_rename(Token):
     use signallib, only: snr, thingy => convolution2d
 
     """
-    __slots__ = ('local', 'original')
+    __slots__ = _fields = ('local', 'original')
     _construct_local = String
     _construct_original = String
 
@@ -92,7 +94,7 @@ class use(Token):
     'use signallib, only: snr, convolution2d'
 
     """
-    __slots__ = ('namespace', 'rename', 'only')
+    __slots__ = _fields = ('namespace', 'rename', 'only')
     defaults = {'rename': none, 'only': none}
     _construct_namespace = staticmethod(_name)
     _construct_rename = staticmethod(lambda args: Tuple(*[arg if isinstance(arg, use_rename) else use_rename(*arg) for arg in args]))
@@ -117,10 +119,15 @@ class Module(Token):
     end module
 
     """
-    __slots__ = ('name', 'declarations', 'definitions')
+    __slots__ = _fields = ('name', 'declarations', 'definitions')
     defaults = {'declarations': Tuple()}
     _construct_name = String
-    _construct_declarations = staticmethod(lambda arg: CodeBlock(*arg))
+
+    @classmethod
+    def _construct_declarations(cls, args):
+        args = [Str(arg) if isinstance(arg, str) else arg for arg in args]
+        return CodeBlock(*args)
+
     _construct_definitions = staticmethod(lambda arg: CodeBlock(*arg))
 
 
@@ -143,7 +150,8 @@ class Subroutine(Node):
     end subroutine
 
     """
-    __slots__ = ('name', 'parameters', 'body', 'attrs')
+    __slots__ = ('name', 'parameters', 'body')
+    _fields = __slots__ + Node._fields
     _construct_name = String
     _construct_parameters = staticmethod(lambda params: Tuple(*map(Variable.deduced, params)))
 
@@ -166,7 +174,7 @@ class SubroutineCall(Token):
     '       call mysub(x, y)'
 
     """
-    __slots__ = ('name', 'subroutine_args')
+    __slots__ = _fields = ('name', 'subroutine_args')
     _construct_name = staticmethod(_name)
     _construct_subroutine_args = staticmethod(_mk_Tuple)
 
@@ -198,7 +206,7 @@ class Do(Token):
 
     """
 
-    __slots__ = ('body', 'counter', 'first', 'last', 'step', 'concurrent')
+    __slots__ = _fields = ('body', 'counter', 'first', 'last', 'step', 'concurrent')
     defaults = {'step': Integer(1), 'concurrent': false}
     _construct_body = staticmethod(lambda body: CodeBlock(*body))
     _construct_counter = staticmethod(sympify)
@@ -223,7 +231,7 @@ class ArrayConstructor(Token):
     '[1, 2, 3]'
 
     """
-    __slots__ = ('elements',)
+    __slots__ = _fields = ('elements',)
     _construct_elements = staticmethod(_mk_Tuple)
 
 
@@ -242,7 +250,7 @@ class ImpliedDoLoop(Token):
     '[-28, (i**3, i = -3, 3, 2), 28]'
 
     """
-    __slots__ = ('expr', 'counter', 'first', 'last', 'step')
+    __slots__ = _fields = ('expr', 'counter', 'first', 'last', 'step')
     defaults = {'step': Integer(1)}
     _construct_expr = staticmethod(sympify)
     _construct_counter = staticmethod(sympify)
@@ -282,7 +290,7 @@ class Extent(Basic):
     def _sympystr(self, printer):
         if len(self.args) == 0:
             return ':'
-        return '%d:%d' % self.args
+        return ":".join(str(arg) for arg in self.args)
 
 assumed_extent = Extent() # or Extent(':'), Extent(None)
 
@@ -333,7 +341,7 @@ def array(symbol, dim, intent=None, *, attrs=(), value=None, type=None):
     symbol : symbol
     dim : Attribute or iterable
         If dim is an ``Attribute`` it need to have the name 'dimension'. If it is
-        not an ``Attribute``, then it is passsed to :func:`dimension` as ``*dim``
+        not an ``Attribute``, then it is passed to :func:`dimension` as ``*dim``
     intent : str
         One of: 'in', 'out', 'inout' or None
     \\*\\*kwargs:
@@ -488,13 +496,39 @@ def reshape(source, shape, pad=None, order=None):
 
     source : Symbol or String
     shape : ArrayExpr
+    pad : Symbol or String, optional
+        The padding array
+    order : Symbol or String, optional
+        The order of the elements in the array
+
+    Examples
+    ========
+
+    >>> from sympy import fcode, symbols
+    >>> from sympy.codegen.fnodes import reshape
+    >>> array, shape, pad, order = symbols('array shape pad order')
+    >>> fcode(reshape(array, shape), source_format='free')
+    'reshape(array, shape)'
+    >>> fcode(reshape(array, shape, pad), source_format='free')
+    'reshape(array, shape, pad=pad)'
+    >>> fcode(reshape(array, shape, None, order), source_format='free')
+    'reshape(array, shape, order=order)'
+    >>> fcode(reshape(array, shape, pad, order), source_format='free')
+    'reshape(array, shape, pad=pad, order=order)'
 
     """
-    return FunctionCall(
+    from sympy.codegen.ast import KeywordFunctionCall
+
+    kwargs = {}
+    if pad is not None:
+        kwargs['pad'] = _printable(pad)
+    if order is not None:
+        kwargs['order'] = _printable(order)
+
+    return KeywordFunctionCall(
         'reshape',
-        [_printable(source), _printable(shape)] +
-        ([_printable(pad)] if pad else []) +
-        ([_printable(order)] if pad else [])
+        [_printable(source), _printable(shape)],
+        kwargs
     )
 
 
@@ -540,7 +574,7 @@ class GoTo(Token):
     'go to (10, 20, 30), i'
 
     """
-    __slots__ = ('labels', 'expr')
+    __slots__ = _fields = ('labels', 'expr')
     defaults = {'expr': none}
     _construct_labels = staticmethod(_mk_Tuple)
     _construct_expr = staticmethod(sympify)
@@ -567,7 +601,7 @@ class FortranReturn(Token):
     '       return x'
 
     """
-    __slots__ = ('return_value',)
+    __slots__ = _fields = ('return_value',)
     defaults = {'return_value': none}
     _construct_return_value = staticmethod(sympify)
 
@@ -613,8 +647,8 @@ class merge(F95Function):
 
 
 class _literal(Float):
-    _token = None  # type: str
-    _decimals = None  # type: int
+    _token: str
+    _decimals: int
 
     def _fcode(self, printer, *args, **kwargs):
         mantissa, sgnd_ex = ('%.{}e'.format(self._decimals) % self).split('e')
@@ -637,14 +671,14 @@ class literal_dp(_literal):
 
 
 class sum_(Token, Expr):
-    __slots__ = ('array', 'dim', 'mask')
+    __slots__ = _fields = ('array', 'dim', 'mask')
     defaults = {'dim': none, 'mask': none}
     _construct_array = staticmethod(sympify)
     _construct_dim = staticmethod(sympify)
 
 
 class product_(Token, Expr):
-    __slots__ = ('array', 'dim', 'mask')
+    __slots__ = _fields = ('array', 'dim', 'mask')
     defaults = {'dim': none, 'mask': none}
     _construct_array = staticmethod(sympify)
     _construct_dim = staticmethod(sympify)

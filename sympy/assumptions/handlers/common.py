@@ -2,52 +2,22 @@
 This module defines base class for handlers and some core handlers:
 ``Q.commutative`` and ``Q.is_true``.
 """
+from __future__ import annotations
 
-from sympy.assumptions import Q, ask, AppliedPredicate
+from sympy.assumptions import Q, AppliedPredicate
+from sympy.assumptions.ask import _ask_recursive
 from sympy.core import Basic, Symbol
-from sympy.core.logic import _fuzzy_group
+from sympy.core.logic import _fuzzy_group, fuzzy_and, fuzzy_or
 from sympy.core.numbers import NaN, Number
 from sympy.logic.boolalg import (And, BooleanTrue, BooleanFalse, conjuncts,
     Equivalent, Implies, Not, Or)
-from sympy.utilities.exceptions import SymPyDeprecationWarning
 
 from ..predicates.common import CommutativePredicate, IsTruePredicate
 
 
-class AskHandler:
-    """Base class that all Ask Handlers must inherit."""
-    def __new__(cls, *args, **kwargs):
-        SymPyDeprecationWarning(
-            feature="AskHandler() class",
-            useinstead="multipledispatch handler",
-            issue=20873,
-            deprecated_since_version="1.8"
-        ).warn()
-        return super().__new__(cls, *args, **kwargs)
-
-
-class CommonHandler(AskHandler):
-    # Deprecated
-    """Defines some useful methods common to most Handlers. """
-
-    @staticmethod
-    def AlwaysTrue(expr, assumptions):
-        return True
-
-    @staticmethod
-    def AlwaysFalse(expr, assumptions):
-        return False
-
-    @staticmethod
-    def AlwaysNone(expr, assumptions):
-        return None
-
-    NaN = AlwaysFalse
-
-
 # CommutativePredicate
 
-@CommutativePredicate.register(Symbol) # type: ignore
+@CommutativePredicate.register(Symbol)
 def _(expr, assumptions):
     """Objects are expected to be commutative unless otherwise stated"""
     assumps = conjuncts(assumptions)
@@ -59,86 +29,86 @@ def _(expr, assumptions):
         return False
     return True
 
-@CommutativePredicate.register(Basic) # type: ignore
+@CommutativePredicate.register(Basic)
 def _(expr, assumptions):
     for arg in expr.args:
-        if not ask(Q.commutative(arg), assumptions):
+        if not _ask_recursive(Q.commutative(arg), assumptions):
             return False
     return True
 
-@CommutativePredicate.register(Number) # type: ignore
+@CommutativePredicate.register(Number)
 def _(expr, assumptions):
     return True
 
-@CommutativePredicate.register(NaN) # type: ignore
+@CommutativePredicate.register(NaN)
 def _(expr, assumptions):
     return True
 
 
 # IsTruePredicate
 
-@IsTruePredicate.register(bool) # type: ignore
+@IsTruePredicate.register(bool)
 def _(expr, assumptions):
     return expr
 
-@IsTruePredicate.register(BooleanTrue) # type: ignore
+@IsTruePredicate.register(BooleanTrue)
 def _(expr, assumptions):
     return True
 
-@IsTruePredicate.register(BooleanFalse) # type: ignore
+@IsTruePredicate.register(BooleanFalse)
 def _(expr, assumptions):
     return False
 
-@IsTruePredicate.register(AppliedPredicate) # type: ignore
+@IsTruePredicate.register(AppliedPredicate)
 def _(expr, assumptions):
-    return ask(expr, assumptions)
+    return _ask_recursive(expr, assumptions)
 
-@IsTruePredicate.register(Not) # type: ignore
+@IsTruePredicate.register(Not)
 def _(expr, assumptions):
     arg = expr.args[0]
     if arg.is_Symbol:
         # symbol used as abstract boolean object
         return None
-    value = ask(arg, assumptions=assumptions)
+    value = _ask_recursive(arg, assumptions=assumptions)
     if value in (True, False):
         return not value
     else:
         return None
 
-@IsTruePredicate.register(Or) # type: ignore
+@IsTruePredicate.register(Or)
 def _(expr, assumptions):
     result = False
     for arg in expr.args:
-        p = ask(arg, assumptions=assumptions)
+        p = _ask_recursive(arg, assumptions=assumptions)
         if p is True:
             return True
         if p is None:
             result = None
     return result
 
-@IsTruePredicate.register(And) # type: ignore
+@IsTruePredicate.register(And)
 def _(expr, assumptions):
     result = True
     for arg in expr.args:
-        p = ask(arg, assumptions=assumptions)
+        p = _ask_recursive(arg, assumptions=assumptions)
         if p is False:
             return False
         if p is None:
             result = None
     return result
 
-@IsTruePredicate.register(Implies) # type: ignore
+@IsTruePredicate.register(Implies)
 def _(expr, assumptions):
     p, q = expr.args
-    return ask(~p | q, assumptions=assumptions)
+    return _ask_recursive(~p | q, assumptions=assumptions)
 
-@IsTruePredicate.register(Equivalent) # type: ignore
+@IsTruePredicate.register(Equivalent)
 def _(expr, assumptions):
     p, q = expr.args
-    pt = ask(p, assumptions=assumptions)
+    pt = _ask_recursive(p, assumptions=assumptions)
     if pt is None:
         return None
-    qt = ask(q, assumptions=assumptions)
+    qt = _ask_recursive(q, assumptions=assumptions)
     if qt is None:
         return None
     return pt == qt
@@ -151,4 +121,12 @@ def test_closed_group(expr, assumptions, key):
     to the current operation.
     """
     return _fuzzy_group(
-        (ask(key(a), assumptions) for a in expr.args), quick_exit=True)
+        (_ask_recursive(key(a), assumptions) for a in expr.args), quick_exit=True)
+
+def ask_all(*queries, assumptions):
+    return fuzzy_and(
+        (_ask_recursive(query, assumptions) for query in queries))
+
+def ask_any(*queries, assumptions):
+    return fuzzy_or(
+        (_ask_recursive(query, assumptions) for query in queries))

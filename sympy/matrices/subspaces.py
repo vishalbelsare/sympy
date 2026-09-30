@@ -1,13 +1,22 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from .utilities import _iszero
 
+if TYPE_CHECKING:
+    from typing import TypeVar
+    from sympy.matrices.matrixbase import MatrixBase
+    Tmat = TypeVar('Tmat', bound=MatrixBase)
 
-def _columnspace(M, simplify=False):
+
+def _columnspace(M: Tmat, simplify=False) -> list[Tmat]:
     """Returns a list of vectors (Matrix objects) that span columnspace of ``M``
 
     Examples
     ========
 
-    >>> from sympy.matrices import Matrix
+    >>> from sympy import Matrix
     >>> M = Matrix(3, 3, [1, 3, 0, -2, -6, 0, 3, 9, 6])
     >>> M
     Matrix([
@@ -41,7 +50,7 @@ def _nullspace(M, simplify=False, iszerofunc=_iszero):
     Examples
     ========
 
-    >>> from sympy.matrices import Matrix
+    >>> from sympy import Matrix
     >>> M = Matrix(3, 3, [1, 3, 0, -2, -6, 0, 3, 9, 6])
     >>> M
     Matrix([

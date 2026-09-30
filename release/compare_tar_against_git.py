@@ -23,57 +23,58 @@ def main(tarname, gitroot):
 # it is Python, or MANIFEST.in if it is not.  (There is a command at the top
 # of setup.py to gather all the things that should be there).
 
-# TODO: Also check that this whitelist isn't growing out of date from files
-# removed from git.
-
 # Files that are in git that should not be in the tarball
 git_whitelist = {
     # Git specific dotfiles
     '.gitattributes',
     '.gitignore',
     '.mailmap',
-    # Travis and CI
-    '.travis.yml',
+    # CI
+    '.github/PULL_REQUEST_TEMPLATE.md',
+    '.github/CODEOWNERS',
+    '.github/circleci-artifacts.yml',
+    '.github/dependabot.yml',
     '.github/workflows/runtests.yml',
+    '.github/workflows/emscripten.yml',
+    '.github/workflows/release.yml',
+    '.github/workflows/checkconflict.yml',
+    '.github/workflows/nightly-wheels.yml',
+    '.github/workflows/zizmor.yml',
     '.ci/durations.json',
     '.ci/generate_durations_log.sh',
     '.ci/parse_durations_log.py',
     '.ci/blacklisted.json',
     '.ci/README.rst',
-    '.github/FUNDING.yml',
+    '.circleci/config.yml',
     '.editorconfig',
-    '.coveragerc',
-    'CODEOWNERS',
-    'asv.conf.travis.json',
-    'coveragerc_travis',
+    'asv.conf.actions.json',
     'codecov.yml',
-    'pytest.ini',
+    'requirements-dev.txt',
     'MANIFEST.in',
     'banner.svg',
+    # GitHub Codespace
+    '.devcontainer/devcontainer.json',
+    # Coding agent instructions
+    'AGENTS.md',
+    'CLAUDE.md',
     # Code of conduct
     'CODE_OF_CONDUCT.md',
-    # Pull request template
-    'PULL_REQUEST_TEMPLATE.md',
     # Contributing guide
     'CONTRIBUTING.md',
+    # Citation config
+    'CITATION.cff',
     # Nothing from bin/ should be shipped unless we intend to install it. Most
     # of this stuff is for development anyway. To run the tests from the
     # tarball, use setup.py test, or import sympy and run sympy.test() or
     # sympy.doctest().
-    'bin/adapt_paths.py',
     'bin/ask_update.py',
-    'bin/authors_update.py',
-    'bin/build_doc.sh',
     'bin/coverage_doctest.py',
     'bin/coverage_report.py',
-    'bin/deploy_doc.sh',
     'bin/diagnose_imports',
     'bin/doctest',
     'bin/generate_module_list.py',
     'bin/generate_test_list.py',
     'bin/get_sympy.py',
-    'bin/mailmap_update.py',
-    'bin/py.bench',
     'bin/strip_whitespace',
     'bin/sympy_time.py',
     'bin/sympy_time_cache.py',
@@ -86,61 +87,29 @@ git_whitelist = {
     'bin/test_py2_import.py',
     'bin/test_setup.py',
     'bin/test_submodule_imports.py',
-    'bin/test_travis.sh',
     'bin/test_optional_dependencies.py',
     'bin/test_sphinx.sh',
+    'bin/mailmap_check.py',
+    'bin/slotscheck',
+    'bin/test_symengine.py',
+    'bin/test_tensorflow.py',
+    'bin/test_pytorch.py',
     # The notebooks are not ready for shipping yet. They need to be cleaned
     # up, and preferably doctested.  See also
     # https://github.com/sympy/sympy/issues/6039.
-    'examples/advanced/identitysearch_example.ipynb',
-    'examples/beginner/plot_advanced.ipynb',
-    'examples/beginner/plot_colors.ipynb',
-    'examples/beginner/plot_discont.ipynb',
-    'examples/beginner/plot_gallery.ipynb',
-    'examples/beginner/plot_intro.ipynb',
-    'examples/intermediate/limit_examples_advanced.ipynb',
-    'examples/intermediate/schwarzschild.ipynb',
-    'examples/notebooks/density.ipynb',
-    'examples/notebooks/fidelity.ipynb',
-    'examples/notebooks/fresnel_integrals.ipynb',
-    'examples/notebooks/qubits.ipynb',
-    'examples/notebooks/sho1d_example.ipynb',
-    'examples/notebooks/spin.ipynb',
-    'examples/notebooks/trace.ipynb',
-    'examples/notebooks/Bezout_Dixon_resultant.ipynb',
-    'examples/notebooks/IntegrationOverPolytopes.ipynb',
-    'examples/notebooks/Macaulay_resultant.ipynb',
-    'examples/notebooks/Sylvester_resultant.ipynb',
-    'examples/notebooks/README.txt',
     # This stuff :)
     'release/.gitignore',
     'release/README.md',
-    'release/Vagrantfile',
-    'release/fabfile.py',
-    'release/Dockerfile',
-    'release/Dockerfile-base',
-    'release/release.sh',
-    'release/rever.xsh',
-    'release/pull_and_run_rever.sh',
     'release/compare_tar_against_git.py',
     'release/update_docs.py',
-    'release/aptinstall.sh',
     'release/build_docs.py',
     'release/github_release.py',
     'release/helpers.py',
-    'release/releasecheck.py',
-    'release/requirements.txt',
-    'release/update_requirements.sh',
-    'release/test_install.py',
     'release/sha256.py',
     'release/authors.py',
-    # This is just a distribute version of setup.py. Used mainly for setup.py
-    # develop, which we don't care about in the release tarball
-    'setupegg.py',
     # pytest stuff
     'conftest.py',
-    # Encrypted deploy key for deploying dev docs to GitHub
-    'github_deploy_key.enc',
+    'requirements-dev.txt',
     }
 
 # Files that should be in the tarball should not be in git
@@ -194,7 +163,7 @@ def compare_tar_against_git(tarname, gitroot):
 
     See the bottom of the file for the whitelists.
     """
-    git_lsfiles = set(i.strip() for i in run('git', 'ls-files', cwd=gitroot))
+    git_lsfiles = {i.strip() for i in run('git', 'ls-files', cwd=gitroot)}
     tar_output_orig = set(run('tar', 'tf', tarname))
     tar_output = set()
     for file in tar_output_orig:
@@ -207,6 +176,12 @@ def compare_tar_against_git(tarname, gitroot):
     # print tar_output
     # print git_lsfiles
     fail = False
+    print()
+    print(blue("Stale entries in git_whitelist:"))
+    print()
+    for line in sorted(git_whitelist - git_lsfiles):
+        fail = True
+        print(line)
     print()
     print(blue("Files in the tarball from git that should not be there:"))
     print()

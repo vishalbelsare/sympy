@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.concrete.summations import Sum
 from sympy.core.expr import Expr
 from sympy.core.symbol import symbols
@@ -181,7 +182,7 @@ def test_multiple_sums():
     s = Sum(i * x + j, (i, a, b), (j, c, d))
 
     l = lambdarepr(s)
-    assert l == "(builtins.sum(i*x + j for i in range(a, b+1) for j in range(c, d+1)))"
+    assert l == "(builtins.sum(i*x + j for j in range(c, d+1) for i in range(a, b+1)))"
 
     args = x, a, b, c, d
     f = lambdify(args, s)
@@ -192,10 +193,8 @@ def test_multiple_sums():
 
 
 def test_sqrt():
-    prntr = LambdaPrinter({'standard' : 'python2'})
-    assert prntr._print_Pow(sqrt(x), rational=False) == 'sqrt(x)'
-    assert prntr._print_Pow(sqrt(x), rational=True) == 'x**(1./2.)'
     prntr = LambdaPrinter({'standard' : 'python3'})
+    assert prntr._print_Pow(sqrt(x), rational=False) == 'sqrt(x)'
     assert prntr._print_Pow(sqrt(x), rational=True) == 'x**(1/2)'
 
 
@@ -208,7 +207,14 @@ def test_numexpr():
     from sympy.logic.boolalg import ITE
     expr = ITE(x > 0, True, False, evaluate=False)
     assert NumExprPrinter().doprint(expr) == \
-           "evaluate('where((x > 0), True, False)', truediv=True)"
+           "numexpr.evaluate('where((x > 0), True, False)', truediv=True)"
+
+    from sympy.codegen.ast import Return, FunctionDefinition, Variable, Assignment
+    func_def = FunctionDefinition(None, 'foo', [Variable(x)], [Assignment(y,x), Return(y**2)])
+    expected = "def foo(x):\n"\
+               "    y = numexpr.evaluate('x', truediv=True)\n"\
+               "    return numexpr.evaluate('y**2', truediv=True)"
+    assert NumExprPrinter().doprint(func_def) == expected
 
 
 class CustomPrintedObject(Expr):
@@ -235,7 +241,7 @@ def test_printmethod():
     obj = CustomPrintedObject()
     assert LambdaPrinter().doprint(obj) == 'lambda'
     assert TensorflowPrinter().doprint(obj) == 'tensorflow'
-    assert NumExprPrinter().doprint(obj) == "evaluate('numexpr', truediv=True)"
+    assert NumExprPrinter().doprint(obj) == "numexpr.evaluate('numexpr', truediv=True)"
 
     assert NumExprPrinter().doprint(Piecewise((y, x >= 0), (z, x < 0))) == \
-            "evaluate('where((x >= 0), y, z)', truediv=True)"
+            "numexpr.evaluate('where((x >= 0), y, z)', truediv=True)"

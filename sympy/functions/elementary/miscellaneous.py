@@ -1,10 +1,12 @@
-from sympy.core import Function, S, sympify, NumberKind
+from __future__ import annotations
+from typing import TYPE_CHECKING
+from sympy.core import S, sympify, NumberKind
 from sympy.utilities.iterables import sift
 from sympy.core.add import Add
 from sympy.core.containers import Tuple
 from sympy.core.operations import LatticeOp, ShortCircuit
 from sympy.core.function import (Application, Lambda,
-    ArgumentIndexError)
+    ArgumentIndexError, DefinedFunction)
 from sympy.core.expr import Expr
 from sympy.core.exprtools import factor_terms
 from sympy.core.mod import Mod
@@ -14,12 +16,15 @@ from sympy.core.power import Pow
 from sympy.core.relational import Eq, Relational
 from sympy.core.singleton import Singleton
 from sympy.core.sorting import ordered
-from sympy.core.symbol import Dummy
+from sympy.core.symbol import Dummy, Symbol
 from sympy.core.rules import Transform
 from sympy.core.logic import fuzzy_and, fuzzy_or, _torf
 from sympy.core.traversal import walk
 from sympy.core.numbers import Integer
 from sympy.logic.boolalg import And, Or
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 def _minmax_as_Piecewise(op, *args):
@@ -27,9 +32,7 @@ def _minmax_as_Piecewise(op, *args):
     from sympy.functions.elementary.piecewise import Piecewise
     ec = []
     for i, a in enumerate(args):
-        c = []
-        for j in range(i + 1, len(args)):
-            c.append(Relational(a, args[j], op))
+        c = [Relational(a, args[j], op) for j in range(i + 1, len(args))]
         ec.append((a, And(*c)))
     return Piecewise(*ec)
 
@@ -292,7 +295,7 @@ def root(arg, n, k=0, evaluate=None):
     ========
 
     sympy.polys.rootoftools.rootof
-    sympy.core.power.integer_nthroot
+    sympy.core.intfunc.integer_nthroot
     sqrt, real_root
 
     References
@@ -302,7 +305,7 @@ def root(arg, n, k=0, evaluate=None):
     .. [2] https://en.wikipedia.org/wiki/Real_root
     .. [3] https://en.wikipedia.org/wiki/Root_of_unity
     .. [4] https://en.wikipedia.org/wiki/Principal_value
-    .. [5] http://mathworld.wolfram.com/CubeRoot.html
+    .. [5] https://mathworld.wolfram.com/CubeRoot.html
 
     """
     n = sympify(n)
@@ -312,14 +315,14 @@ def root(arg, n, k=0, evaluate=None):
 
 
 def real_root(arg, n=None, evaluate=None):
-    """Return the real *n*'th-root of *arg* if possible.
+    r"""Return the real *n*'th-root of *arg* if possible.
 
     Parameters
     ==========
 
     n : int or None, optional
         If *n* is ``None``, then all instances of
-        ``(-n)**(1/odd)`` will be changed to ``-n**(1/odd)``.
+        $(-n)^{1/\text{odd}}$ will be changed to $-n^{1/\text{odd}}$.
         This will only create a real root of a principal root.
         The presence of other factors may cause the result to not be
         real.
@@ -353,7 +356,7 @@ def real_root(arg, n=None, evaluate=None):
     ========
 
     sympy.polys.rootoftools.rootof
-    sympy.core.power.integer_nthroot
+    sympy.core.intfunc.integer_nthroot
     root, sqrt
     """
     from sympy.functions.elementary.complexes import Abs, im, sign
@@ -380,7 +383,8 @@ def real_root(arg, n=None, evaluate=None):
 
 class MinMaxBase(Expr, LatticeOp):
     def __new__(cls, *args, **assumptions):
-        evaluate = assumptions.pop('evaluate', True)
+        from sympy.core.parameters import global_parameters
+        evaluate = assumptions.pop('evaluate', global_parameters.evaluate)
         args = (sympify(arg) for arg in args)
 
         # first standard filter, for cls.zero and cls.identity
@@ -391,14 +395,11 @@ class MinMaxBase(Expr, LatticeOp):
                 args = frozenset(cls._new_args_filter(args))
             except ShortCircuit:
                 return cls.zero
-        else:
-            args = frozenset(args)
-
-        if evaluate:
             # remove redundant args that are easily identified
             args = cls._collapse_arguments(args, **assumptions)
             # find local zeros
             args = cls._find_localzeros(args, **assumptions)
+        args = frozenset(args)
 
         if not args:
             return cls.identity
@@ -407,9 +408,8 @@ class MinMaxBase(Expr, LatticeOp):
             return list(args).pop()
 
         # base creation
-        _args = frozenset(args)
-        obj = Expr.__new__(cls, *ordered(_args), **assumptions)
-        obj._argset = _args
+        obj = Expr.__new__(cls, *ordered(args), **assumptions)
+        obj._argset = args
         return obj
 
     @classmethod
@@ -468,17 +468,17 @@ class MinMaxBase(Expr, LatticeOp):
             # local zeros have not been handled yet, so look through
             # more than the first arg
             if cls == Min:
-                for i in range(len(args)):
-                    if not args[i].is_number:
+                for arg in args:
+                    if not arg.is_number:
                         break
-                    if (args[i] < small) == True:
-                        small = args[i]
+                    if (arg < small) == True:
+                        small = arg
             elif cls == Max:
-                for i in range(len(args)):
-                    if not args[i].is_number:
+                for arg in args:
+                    if not arg.is_number:
                         break
-                    if (args[i] > big) == True:
-                        big = args[i]
+                    if (arg > big) == True:
+                        big = arg
             T = None
             if cls == Min:
                 if small != Min.identity:
@@ -553,7 +553,7 @@ class MinMaxBase(Expr, LatticeOp):
         Generator filtering args.
 
         first standard filter, for cls.zero and cls.identity.
-        Also reshape Max(a, Max(b, c)) to Max(a, b, c),
+        Also reshape ``Max(a, Max(b, c))`` to ``Max(a, b, c)``,
         and check arguments for comparability
         """
         for arg in arg_sequence:
@@ -573,41 +573,82 @@ class MinMaxBase(Expr, LatticeOp):
                 yield arg
 
     @classmethod
-    def _find_localzeros(cls, values, **options):
+    def _is_sign_constrained(cls, x: Expr) -> bool:
         """
-        Sequentially allocate values to localzeros.
-
-        When a value is identified as being more extreme than another member it
-        replaces that member; if this is never true, then the value is simply
-        appended to the localzeros.
+        check if x is guaranteed to be positive, negative, etc., which
+        implies that we need to consider it when comparing to other,
+        unrelated expressions.
         """
-        localzeros = set()
-        for v in values:
-            is_newzero = True
-            localzeros_ = list(localzeros)
-            for z in localzeros_:
-                if id(v) == id(z):
-                    is_newzero = False
-                else:
-                    con = cls._is_connected(v, z)
-                    if con:
-                        is_newzero = False
-                        if con is True or con == cls:
-                            localzeros.remove(z)
-                            localzeros.update([v])
-            if is_newzero:
-                localzeros.update([v])
-        return localzeros
+        return bool(
+            x.is_extended_positive or
+            x.is_extended_negative or
+            x.is_extended_nonnegative or
+            x.is_extended_nonpositive
+        )
 
     @classmethod
-    def _is_connected(cls, x, y):
+    def _split_values(cls, values: Iterable[Expr]) -> tuple[set[Expr], set[Expr], set[Expr]]:
+        """
+        Split an iterable of values into three sets:
+        - `comparables`: values that can be compared easily.
+        - `unconstrained_symbols`: bare symbols that are not
+          sign-constrained. We don't need to pairwise compare these.
+        - `rest`: all other values.
+        """
+        comparables: set[Expr] = set()
+        unconstrained_symbols: set[Expr] = set()
+        rest: set[Expr] = set()
+        for value in values:
+            if value.is_comparable:
+                comparables.add(value)
+            elif isinstance(value, Symbol) and not cls._is_sign_constrained(value):
+                unconstrained_symbols.add(value)
+            else:
+                rest.add(value)
+        return comparables, unconstrained_symbols, rest
+
+    @classmethod
+    def _find_localzeros(cls, values: Iterable[Expr]) -> set[Expr]:
+        comparables, unconstrained_symbols, rest = cls._split_values(values)
+        localzeros: set[Expr] = set()
+        # compare comparables first because they can be eliminated faster
+        to_compare = list(comparables) + list(rest)
+        for value in to_compare:
+            is_new_zero = True
+            if value in localzeros:
+                continue
+            for zero in list(localzeros):
+                if con := cls._is_connected(value, zero):
+                    is_new_zero = False
+                    if con is True or con == cls:
+                        localzeros.remove(zero)
+                        localzeros.add(value)
+            if is_new_zero:
+                localzeros.add(value)
+        unconstrained_symbol_zeros: set[Expr] = set()
+        for symbol in unconstrained_symbols:
+            is_new_zero = True
+            for zero in list(localzeros):
+                if con := cls._is_connected(symbol, zero):
+                    is_new_zero = False
+                    if con is True or con == cls:
+                        localzeros.remove(zero)
+                        unconstrained_symbol_zeros.add(symbol)
+            if is_new_zero:
+                unconstrained_symbol_zeros.add(symbol)
+        return localzeros | unconstrained_symbol_zeros
+
+
+    @classmethod
+    def _is_connected(cls, x: Expr, y: Expr) -> bool | type[Min] | type[Max]:
         """
         Check if x and y are connected somehow.
         """
         for i in range(2):
             if x == y:
                 return True
-            t, f = Max, Min
+            t: type[Max] | type[Min] = Max
+            f: type[Max] | type[Min] = Min
             for op in "><":
                 for j in range(2):
                     try:
@@ -641,7 +682,7 @@ class MinMaxBase(Expr, LatticeOp):
             try:
                 df = self.fdiff(i)
             except ArgumentIndexError:
-                df = Function.fdiff(self, i)
+                df = super().fdiff(i)
             l.append(df * da)
         return Add(*l)
 
@@ -684,15 +725,16 @@ class MinMaxBase(Expr, LatticeOp):
     _eval_is_transcendental = lambda s: _torf(i.is_transcendental for i in s.args)
     _eval_is_zero = lambda s: _torf(i.is_zero for i in s.args)
 
+
 class Max(MinMaxBase, Application):
-    """
+    r"""
     Return, if possible, the maximum value of the list.
 
     When number of arguments is equal one, then
     return this argument.
 
     When number of arguments is equal two, then
-    return, if possible, the value from (a, b) that is >= the other.
+    return, if possible, the value from (a, b) that is $\ge$ the other.
 
     In common case, when the length of list greater than 2, the task
     is more complicated. Return only the arguments, which are greater
@@ -750,13 +792,13 @@ class Max(MinMaxBase, Application):
     symbol `x` with negative assumption is comparable with a natural number.
 
     Also there are "least" elements, which are comparable with all others,
-    and have a zero property (maximum or minimum for all elements). E.g. `oo`.
-    In case of it the allocation operation is terminated and only this value is
-    returned.
+    and have a zero property (maximum or minimum for all elements).
+    For example, in case of $\infty$, the allocation operation is terminated
+    and only this value is returned.
 
     Assumption:
-       - if A > B > C then A > C
-       - if A == B then B can be removed
+       - if $A > B > C$ then $A > C$
+       - if $A = B$ then $B$ can be removed
 
     References
     ==========
@@ -865,7 +907,7 @@ class Min(MinMaxBase, Application):
         return fuzzy_or(a.is_negative for a in self.args)
 
 
-class Rem(Function):
+class Rem(DefinedFunction):
     """Returns the remainder when ``p`` is divided by ``q`` where ``p`` is finite
     and ``q`` is not equal to zero. The result, ``p - int(p/q)*q``, has the same sign
     as the divisor.
@@ -903,21 +945,17 @@ class Rem(Function):
 
     @classmethod
     def eval(cls, p, q):
-        def doit(p, q):
-            """ the function remainder if both p,q are numbers
-                and q is not zero
-            """
+        """Return the function remainder if both p, q are numbers and q is not
+        zero.
+        """
 
-            if q.is_zero:
-                raise ZeroDivisionError("Division by zero")
-            if p is S.NaN or q is S.NaN or p.is_finite is False or q.is_finite is False:
-                return S.NaN
-            if p is S.Zero or p in (q, -q) or (p.is_integer and q == 1):
-                return S.Zero
+        if q.is_zero:
+            raise ZeroDivisionError("Division by zero")
+        if p is S.NaN or q is S.NaN or p.is_finite is False or q.is_finite is False:
+            return S.NaN
+        if p is S.Zero or p in (q, -q) or (p.is_integer and q == 1):
+            return S.Zero
 
-            if q.is_Number:
-                if p.is_Number:
-                    return p - Integer(p/q)*q
-        rv = doit(p, q)
-        if rv is not None:
-            return rv
+        if q.is_Number:
+            if p.is_Number:
+                return p - Integer(p/q)*q

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.multipledispatch.dispatcher import (Dispatcher, MDNotImplementedError,
                                          MethodDispatcher, halt_ordering,
                                          restart_ordering,
@@ -22,7 +23,7 @@ def test_dispatcher():
     f.add((int,), inc)
     f.add((float,), dec)
 
-    with warns(DeprecationWarning):
+    with warns(DeprecationWarning, test_stacklevel=False):
         assert f.resolve((int,)) == inc
     assert f.dispatch(int) is inc
 

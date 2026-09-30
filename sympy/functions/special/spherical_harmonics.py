@@ -1,19 +1,20 @@
+from __future__ import annotations
 from sympy.core.expr import Expr
-from sympy.core.function import Function, ArgumentIndexError
+from sympy.core.function import DefinedFunction, ArgumentIndexError
 from sympy.core.numbers import I, pi
 from sympy.core.singleton import S
 from sympy.core.symbol import Dummy
-from sympy.core.sympify import sympify
 from sympy.functions import assoc_legendre
 from sympy.functions.combinatorial.factorials import factorial
-from sympy.functions.elementary.complexes import Abs
+from sympy.functions.elementary.complexes import Abs, conjugate
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import sin, cos, cot
+from sympy.external.mpmath import local_workprec
 
 _x = Dummy("x")
 
-class Ynm(Function):
+class Ynm(DefinedFunction):
     r"""
     Spherical harmonics defined as
 
@@ -123,22 +124,20 @@ class Ynm(Function):
     See Also
     ========
 
-    Ynm_c, Znm
+    Ynm_c, Znm, sympy.physics.hydrogen.Y_lm, sympy.physics.hydrogen.Z_lm
 
     References
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Spherical_harmonics
-    .. [2] http://mathworld.wolfram.com/SphericalHarmonic.html
-    .. [3] http://functions.wolfram.com/Polynomials/SphericalHarmonicY/
-    .. [4] http://dlmf.nist.gov/14.30
+    .. [2] https://mathworld.wolfram.com/SphericalHarmonic.html
+    .. [3] https://functions.wolfram.com/Polynomials/SphericalHarmonicY/
+    .. [4] https://dlmf.nist.gov/14.30
 
     """
 
     @classmethod
     def eval(cls, n, m, theta, phi):
-        n, m, theta, phi = [sympify(x) for x in (n, m, theta, phi)]
-
         # Handle negative index m and arguments theta, phi
         if m.could_extract_minus_sign():
             m = -m
@@ -214,13 +213,12 @@ class Ynm(Function):
         # Note: works without this function by just calling
         #       mpmath for Legendre polynomials. But using
         #       the dedicated function directly is cleaner.
-        from mpmath import mp, workprec
         n = self.args[0]._to_mpmath(prec)
         m = self.args[1]._to_mpmath(prec)
         theta = self.args[2]._to_mpmath(prec)
         phi = self.args[3]._to_mpmath(prec)
-        with workprec(prec):
-            res = mp.spherharm(n, m, theta, phi)
+        with local_workprec(prec) as ctx:
+            res = ctx.spherharm(n, m, theta, phi)
         return Expr._from_mpmath(res, prec)
 
 
@@ -254,21 +252,20 @@ def Ynm_c(n, m, theta, phi):
     See Also
     ========
 
-    Ynm, Znm
+    Ynm, Znm, sympy.physics.hydrogen.Y_lm, sympy.physics.hydrogen.Z_lm
 
     References
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Spherical_harmonics
-    .. [2] http://mathworld.wolfram.com/SphericalHarmonic.html
-    .. [3] http://functions.wolfram.com/Polynomials/SphericalHarmonicY/
+    .. [2] https://mathworld.wolfram.com/SphericalHarmonic.html
+    .. [3] https://functions.wolfram.com/Polynomials/SphericalHarmonicY/
 
     """
-    from sympy.functions.elementary.complexes import conjugate
     return conjugate(Ynm(n, m, theta, phi))
 
 
-class Znm(Function):
+class Znm(DefinedFunction):
     r"""
     Real spherical harmonics defined as
 
@@ -315,26 +312,24 @@ class Znm(Function):
     See Also
     ========
 
-    Ynm, Ynm_c
+    Ynm, Ynm_c, sympy.physics.hydrogen.Y_lm, sympy.physics.hydrogen.Z_lm
 
     References
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Spherical_harmonics
-    .. [2] http://mathworld.wolfram.com/SphericalHarmonic.html
-    .. [3] http://functions.wolfram.com/Polynomials/SphericalHarmonicY/
+    .. [2] https://mathworld.wolfram.com/SphericalHarmonic.html
+    .. [3] https://functions.wolfram.com/Polynomials/SphericalHarmonicY/
 
     """
 
     @classmethod
     def eval(cls, n, m, theta, phi):
-        n, m, th, ph = [sympify(x) for x in (n, m, theta, phi)]
-
         if m.is_positive:
-            zz = (Ynm(n, m, th, ph) + Ynm_c(n, m, th, ph)) / sqrt(2)
+            zz = (Ynm(n, m, theta, phi) + Ynm_c(n, m, theta, phi)) / sqrt(2)
             return zz
         elif m.is_zero:
-            return Ynm(n, m, th, ph)
+            return Ynm(n, m, theta, phi)
         elif m.is_negative:
-            zz = (Ynm(n, m, th, ph) - Ynm_c(n, m, th, ph)) / (sqrt(2)*I)
+            zz = (Ynm(n, m, theta, phi) - Ynm_c(n, m, theta, phi)) / (sqrt(2)*I)
             return zz

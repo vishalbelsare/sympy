@@ -4,12 +4,13 @@ only and should not be used anywhere else as these do not possess the
 signatures common to SymPy objects. For general use of logic constructs
 please refer to sympy.logic classes And, Or, Not, etc.
 """
-from itertools import combinations, product
-from sympy.core.singleton import S
-from sympy.logic.boolalg import (Equivalent, ITE, Implies, Nand, Nor, Xor)
+from __future__ import annotations
+from itertools import combinations, zip_longest
+from sympy.assumptions.assume import AppliedPredicate, Predicate
 from sympy.core.relational import Eq, Ne, Gt, Lt, Ge, Le
+from sympy.core.singleton import S
 from sympy.logic.boolalg import Or, And, Not, Xnor
-from itertools import zip_longest
+from sympy.logic.boolalg import (Equivalent, ITE, Implies, Nand, Nor, Xor)
 
 
 class Literal:
@@ -54,10 +55,7 @@ class Literal:
         if callable(self.lit):
             lit = self.lit(expr)
         else:
-            try:
-                lit = self.lit.apply(expr)
-            except AttributeError:
-                lit = self.lit.rcall(expr)
+            lit = self.lit.apply(expr)
         return type(self)(lit, self.is_Not)
 
     def __invert__(self):
@@ -171,10 +169,9 @@ def to_NNF(expr, composite_map=None):
     (Literal(Q.negative(x), False) | Literal(Q.zero(x), False))
     """
     from sympy.assumptions.ask import Q
-    from sympy.assumptions.assume import AppliedPredicate, Predicate
 
     if composite_map is None:
-        composite_map = dict()
+        composite_map = {}
 
 
     binrelpreds = {Eq: Q.eq, Ne: Q.ne, Gt: Q.gt, Lt: Q.lt, Ge: Q.ge, Le: Q.le}
@@ -285,9 +282,7 @@ class CNF:
     >>> from sympy.abc import x
     >>> cnf = CNF.from_prop(Q.real(x) & ~Q.zero(x))
     >>> cnf.clauses
-    {frozenset({Literal(Q.zero(x), True)}),
-    frozenset({Literal(Q.negative(x), False),
-    Literal(Q.positive(x), False), Literal(Q.zero(x), False)})}
+    {frozenset({Literal(Q.real(x), False)}), frozenset({Literal(Q.zero(x), True)})}
     """
     def __init__(self, clauses=None):
         if not clauses:
@@ -327,18 +322,10 @@ class CNF:
         return self
 
     def all_predicates(self):
-        predicates = set()
-        for c in self.clauses:
-            predicates |= {arg.lit for arg in c}
-        return predicates
+        return {arg.lit for clause in self.clauses for arg in clause}
 
     def _or(self, cnf):
-        clauses = set()
-        for a, b in product(self.clauses, cnf.clauses):
-            tmp = set(a)
-            for t in b:
-                tmp.add(t)
-            clauses.add(frozenset(tmp))
+        clauses = {a | b for a in self.clauses for b in cnf.clauses}
         return CNF(clauses)
 
     def _and(self, cnf):
@@ -347,20 +334,16 @@ class CNF:
 
     def _not(self):
         clss = list(self.clauses)
-        ll = set()
-        for x in clss[-1]:
-            ll.add(frozenset((~x,)))
+        ll = {frozenset((~x,)) for x in clss[-1]}
         ll = CNF(ll)
 
         for rest in clss[:-1]:
-            p = set()
-            for x in rest:
-                p.add(frozenset((~x,)))
+            p = {frozenset((~x,)) for x in rest}
             ll = ll._or(CNF(p))
         return ll
 
     def rcall(self, expr):
-        clause_list = list()
+        clause_list = []
         for clause in self.clauses:
             lits = [arg.rcall(expr) for arg in clause]
             clause_list.append(OR(*lits))
@@ -376,15 +359,12 @@ class CNF:
 
     @classmethod
     def all_and(cls, *cnfs):
-        b = cnfs[0].copy()
-        for rest in cnfs[1:]:
-            b = b._and(rest)
-        return b
+        clauses = {clause for cnf in cnfs for clause in cnf.clauses}
+        return CNF(clauses)
 
     @classmethod
     def to_CNF(cls, expr):
-        from sympy.assumptions.facts import get_composite_predicates
-        expr = to_NNF(expr, get_composite_predicates())
+        expr = to_NNF(expr)
         expr = distribute_AND_over_OR(expr)
         return expr
 
@@ -406,8 +386,8 @@ class EncodedCNF:
     """
     def __init__(self, data=None, encoding=None):
         if not data and not encoding:
-            data = list()
-            encoding = dict()
+            data = []
+            encoding = {}
         self.data = data
         self.encoding = encoding
         self._symbols = list(encoding.keys())
@@ -415,7 +395,7 @@ class EncodedCNF:
     def from_cnf(self, cnf):
         self._symbols = list(cnf.all_predicates())
         n = len(self._symbols)
-        self.encoding = dict(list(zip(self._symbols, list(range(1, n + 1)))))
+        self.encoding = dict(zip(self._symbols, range(1, n + 1)))
         self.data = [self.encode(clause) for clause in cnf.clauses]
 
     @property
@@ -437,6 +417,13 @@ class EncodedCNF:
     def add_from_cnf(self, cnf):
         clauses = [self.encode(clause) for clause in cnf.clauses]
         self.data += clauses
+
+    def new_auxiliary_variable(self):
+        token = object()
+        value = len(self._symbols) + 1
+        self._symbols.append(token)
+        self.encoding[token] = value
+        return value
 
     def encode_arg(self, arg):
         literal = arg.lit

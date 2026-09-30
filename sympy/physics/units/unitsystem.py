@@ -1,19 +1,21 @@
 """
 Unit system for physical quantities; include definition of constants.
 """
-
-from typing import Dict as tDict
+from __future__ import annotations
 
 from sympy.core.add import Add
-from sympy.core.function import (Derivative, Function)
+from sympy.core.function import (Application, Derivative, Function)
 from sympy.core.mul import Mul
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.physics.units.dimensions import _QuantityMapper
 
-from sympy.utilities.exceptions import SymPyDeprecationWarning
-
 from .dimensions import Dimension
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sympy.core.expr import Expr
+    from sympy.physics.units.quantities import Quantity
 
 
 class UnitSystem(_QuantityMapper):
@@ -26,9 +28,9 @@ class UnitSystem(_QuantityMapper):
     It is much better if all base units have a symbol.
     """
 
-    _unit_systems = {}  # type: tDict[str, UnitSystem]
+    _unit_systems: dict[str, UnitSystem] = {}
 
-    def __init__(self, base_units, units=(), name="", descr="", dimension_system=None):
+    def __init__(self, base_units, units=(), name="", descr="", dimension_system=None, derived_units: dict[Dimension, Expr]={}):
 
         UnitSystem._unit_systems[name] = self
 
@@ -39,6 +41,7 @@ class UnitSystem(_QuantityMapper):
         self._dimension_system = dimension_system
         self._units = tuple(set(base_units) | set(units))
         self._base_units = tuple(base_units)
+        self._derived_units = derived_units
 
         super().__init__()
 
@@ -59,7 +62,7 @@ class UnitSystem(_QuantityMapper):
     def __repr__(self):
         return '<UnitSystem: %s>' % repr(self._base_units)
 
-    def extend(self, base, units=(), name="", description="", dimension_system=None):
+    def extend(self, base, units=(), name="", description="", dimension_system=None, derived_units: dict[Dimension, Expr]={}):
         """Extend the current system into a new one.
 
         Take the base and normal units of the current system to merge
@@ -70,26 +73,7 @@ class UnitSystem(_QuantityMapper):
         base = self._base_units + tuple(base)
         units = self._units + tuple(units)
 
-        return UnitSystem(base, units, name, description, dimension_system)
-
-    def print_unit_base(self, unit):
-        """
-        Useless method.
-
-        DO NOT USE, use instead ``convert_to``.
-
-        Give the string expression of a unit in term of the basis.
-
-        Units are displayed by decreasing power.
-        """
-        SymPyDeprecationWarning(
-            deprecated_since_version="1.2",
-            issue=13336,
-            feature="print_unit_base",
-            useinstead="convert_to",
-        ).warn()
-        from sympy.physics.units import convert_to
-        return convert_to(unit, self._base_units)
+        return UnitSystem(base, units, name, description, dimension_system, {**self._derived_units, **derived_units})
 
     def get_dimension_system(self):
         return self._dimension_system
@@ -142,6 +126,10 @@ class UnitSystem(_QuantityMapper):
         # test is performed in DimensionSystem
         return self.get_dimension_system().is_consistent
 
+    @property
+    def derived_units(self) -> dict[Dimension, Expr]:
+        return self._derived_units
+
     def get_dimensional_expr(self, expr):
         from sympy.physics.units import Quantity
         if isinstance(expr, Mul):
@@ -190,7 +178,7 @@ class UnitSystem(_QuantityMapper):
             for addend in expr.args[1:]:
                 addend_factor, addend_dim = \
                     self._collect_factor_and_dimension(addend)
-                if dim != addend_dim:
+                if not self.get_dimension_system().equivalent_dims(dim, addend_dim):
                     raise ValueError(
                         'Dimension of "{}" is {}, '
                         'but it should be {}'.format(
@@ -204,12 +192,34 @@ class UnitSystem(_QuantityMapper):
                 factor /= ifactor**count
                 dim /= idim**count
             return factor, dim
-        elif isinstance(expr, Function):
-            fds = [self._collect_factor_and_dimension(
-                arg) for arg in expr.args]
-            return (expr.func(*(f[0] for f in fds)),
-                    expr.func(*(d[1] for d in fds)))
+        elif isinstance(expr, Application):
+            # ``Application`` (rather than ``Function``) so that ``Min``/``Max``
+            # and similar applied functions -- which are not ``Function``
+            # subclasses -- are handled too, instead of falling through to the
+            # ``else`` branch and being treated as opaque dimensionless objects.
+            fds = [self._collect_factor_and_dimension(arg) for arg in expr.args]
+            dims = [Dimension(1) if self.get_dimension_system().is_dimensionless(d[1])
+                    else d[1] for d in fds]
+            # ``_collect_factor_and_dimension`` must return a single
+            # ``(factor, dimension)`` pair; the previous code splatted one
+            # dimension per argument, which produced a malformed tuple (and a
+            # crash when the result was unpacked) for multi-argument functions.
+            # The arguments of a function must all carry the same dimension,
+            # which is the dimension of the result.
+            dim = dims[0] if dims else Dimension(1)
+            for d in dims[1:]:
+                if not self.get_dimension_system().equivalent_dims(dim, d):
+                    raise ValueError(
+                        'Dimension of "{}" is {}, but it should be {}'.format(
+                            expr, d, dim))
+            return expr.func(*(f[0] for f in fds)), dim
         elif isinstance(expr, Dimension):
             return S.One, expr
         else:
             return expr, Dimension(1)
+
+    def get_units_non_prefixed(self) -> set[Quantity]:
+        """
+        Return the units of the system that do not have a prefix.
+        """
+        return set(filter(lambda u: not u.is_prefixed and not u.is_physical_constant, self._units))

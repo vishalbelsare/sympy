@@ -1,3 +1,4 @@
+from __future__ import annotations
 import math
 from sympy.core.containers import Tuple
 from sympy.core.numbers import nan, oo, Float, Integer
@@ -256,7 +257,7 @@ def test_none():
         pass
     foo = Foo()
     assert foo != none
-    assert none == None
+    assert none == None  # noqa: E711
     assert none == NoneToken()
     assert none.func(*none.args) == none
 
@@ -387,7 +388,6 @@ def test_Variable():
     assert Variable.deduced(z, value=3.0+1j).type == complex_
 
 
-
 def test_Pointer():
     p = Pointer(x)
     assert p.symbol == x
@@ -444,7 +444,6 @@ def test_Declaration():
     raises(ValueError, lambda: Declaration(vi, 42))
 
 
-
 def test_IntBaseType():
     assert intc.name == String('intc')
     assert intc.args == (intc.name,)
@@ -495,7 +494,7 @@ def test_FloatType():
     assert abs(f80.tiny / Float('3.36210314311209350626e-4932', precision=80) - 1) < 0.1*10**-f80.dig
     assert abs(f128.tiny / Float('3.3621031431120935062626778173217526e-4932', precision=128) - 1) < 0.1*10**-f128.dig
 
-    assert f64.cast_check(0.5) == 0.5
+    assert f64.cast_check(0.5) == Float(0.5, 17)
     assert abs(f64.cast_check(3.7) - 3.7) < 3e-17
     assert isinstance(f64.cast_check(3), (Float, float))
 
@@ -556,7 +555,6 @@ def test_While():
     assert whl1 != While(x < 3, [xpp])
 
 
-
 def test_Scope():
     assign = Assignment(x, y)
     incr = AddAugmentedAssignment(x, 1)
@@ -581,7 +579,7 @@ def test_Print():
     ps2 = Print([n, x])
     assert ps2 == Print([n, x])
     assert ps2 != ps
-    assert ps2.format_string == None
+    assert ps2.format_string == None  # noqa: E711
 
 
 def test_FunctionPrototype_and_FunctionDefinition():

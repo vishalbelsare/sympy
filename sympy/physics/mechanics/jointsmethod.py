@@ -1,12 +1,20 @@
+from __future__ import annotations
 from sympy.physics.mechanics import (Body, Lagrangian, KanesMethod, LagrangesMethod,
                                     RigidBody, Particle)
-from sympy.physics.mechanics.method import _Methods
+from sympy.physics.mechanics.body_base import BodyBase
+from sympy.physics.mechanics.method import MethodBase
+from sympy import Matrix
+from sympy.utilities.exceptions import sympy_deprecation_warning
 
 __all__ = ['JointsMethod']
 
 
-class JointsMethod(_Methods):
+class JointsMethod(MethodBase):
     """Method for formulating the equations of motion using a set of interconnected bodies with joints.
+
+    .. deprecated:: 1.13
+        The JointsMethod class is deprecated. Its functionality has been
+        replaced by the new :class:`~.System` class.
 
     Parameters
     ==========
@@ -19,8 +27,15 @@ class JointsMethod(_Methods):
     Attributes
     ==========
 
-    q, u : iterable
-        Iterable of the generalized coordinates and speeds
+    frame : ReferenceFrame
+        Inertial reference frame that the equations of motion were formulated
+        with respect to.
+    q : list
+        List of the generalized coordinates.
+    u : list
+        List of the generalized speeds.
+    holonomic_constraints : Matrix, shape(0, 0)
+        Column matrix of the holonomic constraint residuals.
     bodies : iterable
         Iterable of Body objects in the system.
     loads : iterable
@@ -42,6 +57,14 @@ class JointsMethod(_Methods):
     Examples
     ========
 
+    As Body and JointsMethod have been deprecated, the following examples are
+    for illustrative purposes only. The functionality of Body is fully captured
+    by :class:`~.RigidBody` and :class:`~.Particle` and the functionality of
+    JointsMethod is fully captured by :class:`~.System`. To ignore the
+    deprecation warning we can use the ignore_warnings context manager.
+
+    >>> from sympy.utilities.exceptions import ignore_warnings
+
     This is a simple example for a one degree of freedom translational
     spring-mass-damper.
 
@@ -50,12 +73,14 @@ class JointsMethod(_Methods):
     >>> from sympy.physics.vector import dynamicsymbols
     >>> c, k = symbols('c k')
     >>> x, v = dynamicsymbols('x v')
-    >>> wall = Body('W')
-    >>> body = Body('B')
+    >>> with ignore_warnings(DeprecationWarning):
+    ...     wall = Body('W')
+    ...     body = Body('B')
     >>> J = PrismaticJoint('J', wall, body, coordinates=x, speeds=v)
     >>> wall.apply_force(c*v*wall.x, reaction_body=body)
     >>> wall.apply_force(k*x*wall.x, reaction_body=body)
-    >>> method = JointsMethod(wall, J)
+    >>> with ignore_warnings(DeprecationWarning):
+    ...     method = JointsMethod(wall, J)
     >>> method.form_eoms()
     Matrix([[-B_mass*Derivative(v(t), t) - c*v(t) - k*x(t)]])
     >>> M = method.mass_matrix_full
@@ -75,10 +100,18 @@ class JointsMethod(_Methods):
     """
 
     def __init__(self, newtonion, *joints):
-        if isinstance(newtonion, Body):
-            self.frame = newtonion.frame
+        sympy_deprecation_warning(
+            """
+            The JointsMethod class is deprecated.
+            Its functionality has been replaced by the new System class.
+            """,
+            deprecated_since_version="1.13",
+            active_deprecations_target="deprecated-mechanics-jointsmethod"
+        )
+        if isinstance(newtonion, BodyBase):
+            self._frame = newtonion.frame
         else:
-            self.frame = newtonion
+            self._frame = newtonion
 
         self._joints = joints
         self._bodies = self._generate_bodylist()
@@ -151,7 +184,8 @@ class JointsMethod(_Methods):
     def _generate_loadlist(self):
         load_list = []
         for body in self.bodies:
-            load_list.extend(body.loads)
+            if isinstance(body, Body):
+                load_list.extend(body.loads)
         return load_list
 
     def _generate_q(self):
@@ -161,7 +195,7 @@ class JointsMethod(_Methods):
                 if coordinate in q_ind:
                     raise ValueError('Coordinates of joints should be unique.')
                 q_ind.append(coordinate)
-        return q_ind
+        return Matrix(q_ind)
 
     def _generate_u(self):
         u_ind = []
@@ -170,18 +204,21 @@ class JointsMethod(_Methods):
                 if speed in u_ind:
                     raise ValueError('Speeds of joints should be unique.')
                 u_ind.append(speed)
-        return u_ind
+        return Matrix(u_ind)
 
     def _generate_kdes(self):
-        kd_ind = []
+        kd_ind = Matrix(1, 0, []).T
         for joint in self._joints:
-            kd_ind.extend(joint.kdes)
+            kd_ind = kd_ind.col_join(joint.kdes)
         return kd_ind
 
     def _convert_bodies(self):
         # Convert `Body` to `Particle` and `RigidBody`
         bodylist = []
         for body in self.bodies:
+            if not isinstance(body, Body):
+                bodylist.append(body)
+                continue
             if body.is_rigidbody:
                 rb = RigidBody(body.name, body.masscenter, body.frame, body.mass,
                     (body.central_inertia, body.masscenter))
@@ -192,6 +229,9 @@ class JointsMethod(_Methods):
                 part.potential_energy = body.potential_energy
                 bodylist.append(part)
         return bodylist
+
+    def _form_eoms(self):
+        return self.form_eoms()
 
     def form_eoms(self, method=KanesMethod):
         """Method to form system's equation of motions.
@@ -211,6 +251,15 @@ class JointsMethod(_Methods):
         Examples
         ========
 
+        As Body and JointsMethod have been deprecated, the following examples
+        are for illustrative purposes only. The functionality of Body is fully
+        captured by :class:`~.RigidBody` and :class:`~.Particle` and the
+        functionality of JointsMethod is fully captured by :class:`~.System`. To
+        ignore the deprecation warning we can use the ignore_warnings context
+        manager.
+
+        >>> from sympy.utilities.exceptions import ignore_warnings
+
         This is a simple example for a one degree of freedom translational
         spring-mass-damper.
 
@@ -220,12 +269,14 @@ class JointsMethod(_Methods):
         >>> q = dynamicsymbols('q')
         >>> qd = dynamicsymbols('q', 1)
         >>> m, k, b = symbols('m k b')
-        >>> wall = Body('W')
-        >>> part = Body('P', mass=m)
+        >>> with ignore_warnings(DeprecationWarning):
+        ...     wall = Body('W')
+        ...     part = Body('P', mass=m)
         >>> part.potential_energy = k * q**2 / S(2)
         >>> J = PrismaticJoint('J', wall, part, coordinates=q, speeds=qd)
         >>> wall.apply_force(b * qd * wall.x, reaction_body=part)
-        >>> method = JointsMethod(wall, J)
+        >>> with ignore_warnings(DeprecationWarning):
+        ...     method = JointsMethod(wall, J)
         >>> method.form_eoms(LagrangesMethod)
         Matrix([[b*Derivative(q(t), t) + k*q(t) + m*Derivative(q(t), (t, 2))]])
 
@@ -257,22 +308,46 @@ class JointsMethod(_Methods):
         inv_method : str
             The specific sympy inverse matrix calculation method to use. For a
             list of valid methods, see
-            :meth:`~sympy.matrices.matrices.MatrixBase.inv`
+            :py:meth:`~sympy.matrices.matrixbase.MatrixBase.inv`.
 
         Returns
         ========
 
         Matrix
-            Numerically solveable equations.
+            Numerically solvable equations.
 
         See Also
         ========
 
-        sympy.physics.mechanics.KanesMethod.rhs():
-            KanesMethod's rhs function.
-        sympy.physics.mechanics.LagrangesMethod.rhs():
-            LagrangesMethod's rhs function.
+        sympy.physics.mechanics.method.MethodBase.rhs:
+            Standard form and behavior of the ``rhs()`` method.
 
         """
 
         return self.method.rhs(inv_method=inv_method)
+
+    @property
+    def frame(self):
+        """Inertial reference frame that the equations of motion were
+        formulated with respect to."""
+        return self._frame
+
+    @property
+    def holonomic_constraints(self):
+        """JointsMethod does not support constraints."""
+        return Matrix()
+
+    @property
+    def nonholonomic_constraints(self):
+        """JointsMethod does not support constraints."""
+        return Matrix()
+
+    @property
+    def velocity_constraints(self):
+        """JointsMethod does not support constraints."""
+        return Matrix()
+
+    @property
+    def acceleration_constraints(self):
+        """JointsMethod does not support constraints."""
+        return Matrix()

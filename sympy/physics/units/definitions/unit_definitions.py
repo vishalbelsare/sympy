@@ -1,11 +1,12 @@
+from __future__ import annotations
 from sympy.physics.units.definitions.dimension_definitions import current, temperature, amount_of_substance, \
     luminous_intensity, angle, charge, voltage, impedance, conductance, capacitance, inductance, magnetic_density, \
     magnetic_flux, information
 
 from sympy.core.numbers import (Rational, pi)
 from sympy.core.singleton import S as S_singleton
-from sympy.physics.units.prefixes import kilo, milli, micro, deci, centi, nano, pico, kibi, mebi, gibi, tebi, pebi, exbi
-from sympy.physics.units.quantities import Quantity
+from sympy.physics.units.prefixes import kilo, mega, milli, micro, deci, centi, nano, pico, kibi, mebi, gibi, tebi, pebi, exbi
+from sympy.physics.units.quantities import PhysicalConstant, Quantity
 
 One = S_singleton.One
 
@@ -30,7 +31,15 @@ mil = angular_mil = angular_mils = Quantity("angular_mil", abbrev="mil")
 # Base units:
 m = meter = meters = Quantity("meter", abbrev="m")
 
-# gram; used to define its prefixed units
+# gram; used to define its prefixed units.
+# NOTE: `gram` is given a scale factor of 1 (it takes no explicit scale factor
+# below, so it defaults to 1) because it is the unprefixed member of the mass
+# family: every mass unit here is expressed as a multiple of `gram`, and the
+# prefixed ones follow their prefix (milligram = milli*gram, kilogram =
+# kilo*gram, etc.).  This is a naming/prefix convention, NOT a statement that
+# the base mass unit is the gram: it is independent of the chosen unit system.
+# In particular this does not mean the code follows MKS -- in SI the base mass
+# unit is the kilogram, and `kilogram` accordingly gets scale factor 1000 here.
 g = gram = grams = Quantity("gram", abbrev="g")
 
 # NOTE: the `kilogram` has scale factor 1000. In SI, kg is a base unit, but
@@ -54,14 +63,15 @@ mole.set_global_dimension(amount_of_substance)
 cd = candela = candelas = Quantity("candela", abbrev="cd")
 candela.set_global_dimension(luminous_intensity)
 
-mg = milligram = milligrams = Quantity("milligram", abbrev="mg")
-mg.set_global_relative_scale_factor(milli, gram)
-
-ug = microgram = micrograms = Quantity("microgram", abbrev="ug", latex_repr=r"\mu\text{g}")
-ug.set_global_relative_scale_factor(micro, gram)
-
 # derived units
 newton = newtons = N = Quantity("newton", abbrev="N")
+
+kilonewton = kilonewtons = kN = Quantity("kilonewton", abbrev="kN")
+kilonewton.set_global_relative_scale_factor(kilo, newton)
+
+meganewton = meganewtons = MN = Quantity("meganewton", abbrev="MN")
+meganewton.set_global_relative_scale_factor(mega, newton)
+
 joule = joules = J = Quantity("joule", abbrev="J")
 watt = watts = W = Quantity("watt", abbrev="W")
 pascal = pascals = Pa = pa = Quantity("pascal", abbrev="Pa")
@@ -114,6 +124,24 @@ gray = Gy = Quantity("gray")
 becquerel = Bq = Quantity("becquerel", abbrev="Bq")
 
 
+# Common mass units
+
+mg = milligram = milligrams = Quantity("milligram", abbrev="mg")
+mg.set_global_relative_scale_factor(milli, gram)
+
+ug = microgram = micrograms = Quantity("microgram", abbrev="ug", latex_repr=r"\mu\text{g}")
+ug.set_global_relative_scale_factor(micro, gram)
+
+# Atomic mass constant
+Da = dalton = amu = amus = atomic_mass_unit = atomic_mass_constant = PhysicalConstant("atomic_mass_constant")
+
+t = metric_ton = tonne = Quantity("tonne", abbrev="t")
+tonne.set_global_relative_scale_factor(mega, gram)
+
+# Electron rest mass
+me = electron_rest_mass = Quantity("electron_rest_mass", abbrev="me")
+
+
 # Common length units
 
 km = kilometer = kilometers = Quantity("kilometer", abbrev="km")
@@ -153,18 +181,23 @@ mi.set_global_relative_scale_factor(5280, feet)
 nmi = nautical_mile = nautical_miles = Quantity("nautical_mile")
 nmi.set_global_relative_scale_factor(6076, feet)
 
+angstrom = angstroms = Quantity("angstrom", latex_repr=r'\r{A}')
+angstrom.set_global_relative_scale_factor(Rational(1, 10**10), meter)
+
 
 # Common volume and area units
 
-l = liter = liters = Quantity("liter")
+ha = hectare = Quantity("hectare", abbrev="ha")
 
-dl = deciliter = deciliters = Quantity("deciliter")
+l = L = liter = liters = Quantity("liter", abbrev="l")
+
+dl = dL = deciliter = deciliters = Quantity("deciliter", abbrev="dl")
 dl.set_global_relative_scale_factor(Rational(1, 10), liter)
 
-cl = centiliter = centiliters = Quantity("centiliter")
+cl = cL = centiliter = centiliters = Quantity("centiliter", abbrev="cl")
 cl.set_global_relative_scale_factor(Rational(1, 100), liter)
 
-ml = milliliter = milliliters = Quantity("milliliter")
+ml = mL = milliliter = milliliters = Quantity("milliliter", abbrev="ml")
 ml.set_global_relative_scale_factor(Rational(1, 1000), liter)
 
 
@@ -221,65 +254,62 @@ year = years = tropical_year
 #### CONSTANTS ####
 
 # Newton constant
-G = gravitational_constant = Quantity("gravitational_constant", abbrev="G")
+G = gravitational_constant = PhysicalConstant("gravitational_constant", abbrev="G")
 
 # speed of light
-c = speed_of_light = Quantity("speed_of_light", abbrev="c")
+c = speed_of_light = PhysicalConstant("speed_of_light", abbrev="c")
 
 # elementary charge
-elementary_charge = Quantity("elementary_charge", abbrev="e")
+elementary_charge = PhysicalConstant("elementary_charge", abbrev="e")
 
 # Planck constant
-planck = Quantity("planck", abbrev="h")
+planck = PhysicalConstant("planck", abbrev="h")
 
 # Reduced Planck constant
-hbar = Quantity("hbar", abbrev="hbar")
+hbar = PhysicalConstant("hbar", abbrev="hbar")
 
 # Electronvolt
-eV = electronvolt = electronvolts = Quantity("electronvolt", abbrev="eV")
+eV = electronvolt = electronvolts = PhysicalConstant("electronvolt", abbrev="eV")
 
 # Avogadro number
-avogadro_number = Quantity("avogadro_number")
+avogadro_number = PhysicalConstant("avogadro_number")
 
 # Avogadro constant
-avogadro = avogadro_constant = Quantity("avogadro_constant")
+avogadro = avogadro_constant = PhysicalConstant("avogadro_constant")
 
 # Boltzmann constant
-boltzmann = boltzmann_constant = Quantity("boltzmann_constant")
+boltzmann = boltzmann_constant = PhysicalConstant("boltzmann_constant")
 
 # Stefan-Boltzmann constant
-stefan = stefan_boltzmann_constant = Quantity("stefan_boltzmann_constant")
-
-# Atomic mass
-amu = amus = atomic_mass_unit = atomic_mass_constant = Quantity("atomic_mass_constant")
+stefan = stefan_boltzmann_constant = PhysicalConstant("stefan_boltzmann_constant")
 
 # Molar gas constant
-R = molar_gas_constant = Quantity("molar_gas_constant", abbrev="R")
+R = molar_gas_constant = PhysicalConstant("molar_gas_constant", abbrev="R")
 
 # Faraday constant
-faraday_constant = Quantity("faraday_constant")
+faraday_constant = PhysicalConstant("faraday_constant")
 
 # Josephson constant
-josephson_constant = Quantity("josephson_constant", abbrev="K_j")
+josephson_constant = PhysicalConstant("josephson_constant", abbrev="K_j")
 
 # Von Klitzing constant
-von_klitzing_constant = Quantity("von_klitzing_constant", abbrev="R_k")
+von_klitzing_constant = PhysicalConstant("von_klitzing_constant", abbrev="R_k")
 
 # Acceleration due to gravity (on the Earth surface)
-gee = gees = acceleration_due_to_gravity = Quantity("acceleration_due_to_gravity", abbrev="g")
+gee = gees = acceleration_due_to_gravity = PhysicalConstant("acceleration_due_to_gravity", abbrev="g")
 
 # magnetic constant:
-u0 = magnetic_constant = vacuum_permeability = Quantity("magnetic_constant")
+u0 = magnetic_constant = vacuum_permeability = PhysicalConstant("magnetic_constant")
 
 # electric constat:
-e0 = electric_constant = vacuum_permittivity = Quantity("vacuum_permittivity")
+e0 = electric_constant = vacuum_permittivity = PhysicalConstant("vacuum_permittivity")
 
 # vacuum impedance:
-Z0 = vacuum_impedance = Quantity("vacuum_impedance", abbrev='Z_0', latex_repr=r'Z_{0}')
+Z0 = vacuum_impedance = PhysicalConstant("vacuum_impedance", abbrev='Z_0', latex_repr=r'Z_{0}')
 
 # Coulomb's constant:
 coulomb_constant = coulombs_constant = electric_force_constant = \
-    Quantity("coulomb_constant", abbrev="k_e")
+    PhysicalConstant("coulomb_constant", abbrev="k_e")
 
 
 atmosphere = atmospheres = atm = Quantity("atmosphere", abbrev="atm")

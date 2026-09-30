@@ -1,6 +1,7 @@
 """This module contains some general purpose utilities that are used across
 SymPy.
 """
+from __future__ import annotations
 from .iterables import (flatten, group, take, subsets,
     variations, numbered_symbols, cartes, capture, dict_merge,
     prefixes, postfixes, sift, topological_sort, unflatten,
@@ -9,8 +10,6 @@ from .iterables import (flatten, group, take, subsets,
 from .misc import filldedent
 
 from .lambdify import lambdify
-
-from .source import source
 
 from .decorator import threaded, xthreaded, public, memoize_property
 
@@ -25,8 +24,6 @@ __all__ = [
     'filldedent',
 
     'lambdify',
-
-    'source',
 
     'threaded', 'xthreaded', 'public', 'memoize_property',
 

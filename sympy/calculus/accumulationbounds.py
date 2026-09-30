@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core import Add, Mul, Pow, S
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
@@ -12,7 +13,8 @@ from sympy.sets.sets import FiniteSet
 
 
 class AccumulationBounds(Expr):
-    r"""
+    r"""An accumulation bounds.
+
     # Note AccumulationBounds has an alias: AccumBounds
 
     AccumulationBounds represent an interval `[a, b]`, which is always closed
@@ -153,7 +155,7 @@ class AccumulationBounds(Expr):
     AccumBounds(0, 1)
 
     Some symbol in an expression can be substituted for a AccumulationBounds
-    object. But it doesn't necessarily evaluate the AccumulationBounds for
+    object. But it does not necessarily evaluate the AccumulationBounds for
     that expression.
 
     The same expression can be evaluated to different values depending upon
@@ -171,7 +173,7 @@ class AccumulationBounds(Expr):
 
     .. [1] https://en.wikipedia.org/wiki/Interval_arithmetic
 
-    .. [2] http://fab.cba.mit.edu/classes/S62.12/docs/Hickey_interval.pdf
+    .. [2] https://fab.cba.mit.edu/classes/S62.12/docs/Hickey_interval.pdf
 
     Notes
     =====
@@ -183,7 +185,7 @@ class AccumulationBounds(Expr):
     is_extended_real = True
     is_number = False
 
-    def __new__(cls, min, max):
+    def __new__(cls, min, max) -> Expr: # type: ignore
 
         min = _sympify(min)
         max = _sympify(max)
@@ -349,8 +351,7 @@ class AccumulationBounds(Expr):
                 v = set()
                 for a in self.args:
                     vi = other*a
-                    for i in vi.args or (vi,):
-                        v.add(i)
+                    v.update(vi.args or (vi,))
                 return AccumBounds(Min(*v), Max(*v))
             if other is S.Infinity:
                 if self.min.is_zero:
@@ -523,7 +524,7 @@ class AccumulationBounds(Expr):
                             return AccumBounds(self.max**other, oo)
                         if self.max.is_zero:
                             return AccumBounds(self.min**other, oo)
-                        return AccumBounds(0, oo)
+                        return (1/self)**(-other)
                     return AccumBounds(
                         S.Zero, Max(self.min**other, self.max**other))
                 elif other % 2 == 1:
@@ -532,7 +533,7 @@ class AccumulationBounds(Expr):
                             return AccumBounds(self.max**other, oo)
                         if self.max.is_zero:
                             return AccumBounds(-oo, self.min**other)
-                        return AccumBounds(-oo, oo)
+                        return (1/self)**(-other)
                     return AccumBounds(self.min**other, self.max**other)
 
             # non-integer exponent
@@ -634,9 +635,9 @@ class AccumulationBounds(Expr):
         Parameters
         ==========
 
-        other: AccumulationBounds
-             Another AccumulationBounds object with which the intersection
-             has to be computed.
+        other : AccumulationBounds
+            Another AccumulationBounds object with which the intersection
+            has to be computed.
 
         Returns
         =======
@@ -679,24 +680,17 @@ class AccumulationBounds(Expr):
                 return other
 
         if other.min <= self.min:
-            if other.max < self.max:
+            if other.max <= self.max:
                 return AccumBounds(self.min, other.max)
             if other.max > self.max:
                 return self
 
     def union(self, other):
-        # TODO : Devise a better method for Union of AccumBounds
-        # this method is not actually correct and
-        # can be made better
         if not isinstance(other, AccumBounds):
             raise TypeError(
-                "Input must be AccumulationBounds or FiniteSet object")
+                "Input must be AccumulationBounds object")
 
-        if self.min <= other.min and self.max >= other.min:
-            return AccumBounds(self.min, Max(self.max, other.max))
-
-        if other.min <= self.min and other.max >= self.min:
-            return AccumBounds(other.min, Max(self.max, other.max))
+        return AccumBounds(Min(self.min, other.min), Max(self.max, other.max))
 
 
 @dispatch(AccumulationBounds, AccumulationBounds) # type: ignore # noqa:F811

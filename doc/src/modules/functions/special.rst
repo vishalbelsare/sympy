@@ -1,25 +1,25 @@
+.. _special-functions:
+
 Special
 =======
 
-DiracDelta
-----------
+Dirac Delta and Related Discontinuous Functions
+-----------------------------------------------
+
 .. autoclass:: sympy.functions.special.delta_functions.DiracDelta
    :members:
 
-Heaviside
----------
 .. autoclass:: sympy.functions.special.delta_functions.Heaviside
    :members:
 
-Singularity Function
---------------------
 .. module:: sympy.functions.special.singularity_functions
 
 .. autoclass:: sympy.functions.special.singularity_functions.SingularityFunction
    :members:
 
-Gamma, Beta and related Functions
+Gamma, Beta and Related Functions
 ---------------------------------
+
 .. module:: sympy.functions.special.gamma_functions
 
 .. autoclass:: sympy.functions.special.gamma_functions.gamma
@@ -44,6 +44,7 @@ Gamma, Beta and related Functions
 
 Error Functions and Fresnel Integrals
 -------------------------------------
+
 .. module:: sympy.functions.special.error_functions
 
 .. autoclass:: sympy.functions.special.error_functions.erf
@@ -59,6 +60,8 @@ Error Functions and Fresnel Integrals
 .. autoclass:: sympy.functions.special.error_functions.erfcinv
    :members:
 .. autoclass:: sympy.functions.special.error_functions.erf2inv
+   :members:
+.. autoclass:: sympy.functions.special.error_functions.owens_t
    :members:
 
 .. autoclass:: sympy.functions.special.error_functions.FresnelIntegral
@@ -182,6 +185,13 @@ Elliptic integrals
 .. autoclass:: elliptic_pi
    :members:
 
+Jacobi theta functions
+----------------------
+.. module:: sympy.functions.special.elliptic_functions
+
+.. autoclass:: jtheta
+   :members:
+
 Mathieu Functions
 -----------------
 .. module:: sympy.functions.special.mathieu_functions
@@ -245,6 +255,9 @@ Hermite Polynomials
 +++++++++++++++++++
 
 .. autoclass:: sympy.functions.special.polynomials.hermite
+   :members:
+
+.. autoclass:: sympy.functions.special.polynomials.hermite_prob
    :members:
 
 Laguerre Polynomials

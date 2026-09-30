@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.expr import unchanged
 from sympy.core.singleton import S
 from sympy.core.symbol import Symbol
@@ -5,7 +6,7 @@ from sympy.sets.contains import Contains
 from sympy.sets.fancysets import Interval
 from sympy.sets.powerset import PowerSet
 from sympy.sets.sets import FiniteSet
-from sympy.testing.pytest import raises, XFAIL
+from sympy.testing.pytest import raises
 
 
 def test_powerset_creation():
@@ -53,11 +54,6 @@ def test_powerset__contains__():
                 assert subset_series[i] not in \
                     PowerSet(subset_series[j], evaluate=False)
 
-
-@XFAIL
-def test_failing_powerset__contains__():
-    # XXX These are failing when evaluate=True,
-    # but using unevaluated PowerSet works fine.
     assert FiniteSet(1, 2) not in PowerSet(S.EmptySet).rewrite(FiniteSet)
     assert S.Naturals not in PowerSet(S.EmptySet).rewrite(FiniteSet)
     assert S.Naturals not in PowerSet(FiniteSet(1, 2)).rewrite(FiniteSet)
@@ -131,7 +127,7 @@ def test_powerset_method():
 
 def test_is_subset():
     # covers line 101-102
-    # initalize powerset(1), which is a subset of powerset(1,2)
+    # initialize powerset(1), which is a subset of powerset(1,2)
     subset = PowerSet(FiniteSet(1))
     pset = PowerSet(FiniteSet(1, 2))
     bad_set = PowerSet(FiniteSet(2, 3))

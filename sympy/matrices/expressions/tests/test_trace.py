@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core import Lambda, S, symbols
 from sympy.concrete import Sum
 from sympy.functions import adjoint, conjugate, transpose
@@ -8,6 +9,8 @@ from sympy.matrices.expressions import (
 )
 from sympy.matrices.expressions.special import OneMatrix
 from sympy.testing.pytest import raises
+from sympy.abc import i
+
 
 n = symbols('n', integer=True)
 A = MatrixSymbol('A', n, n)
@@ -95,8 +98,9 @@ def test_trace_constant_factor():
     assert trace(MatMul(2, X)) == 10
 
 
-def test_rewrite():
-    assert isinstance(trace(A).rewrite(Sum), Sum)
+def test_trace_rewrite():
+    assert trace(A).rewrite(Sum) == Sum(A[i, i], (i, 0, n - 1))
+    assert trace(eye(3)).rewrite(Sum) == 3
 
 
 def test_trace_normalize():

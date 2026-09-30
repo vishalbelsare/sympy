@@ -1,10 +1,14 @@
+from __future__ import annotations
+from math import prod
+
 from sympy.core import S, Integer
-from sympy.core.function import Function
+from sympy.core.function import DefinedFunction
 from sympy.core.logic import fuzzy_not
-from sympy.core.mul import prod
 from sympy.core.relational import Ne
 from sympy.core.sorting import default_sort_key
 from sympy.external.gmpy import SYMPY_INTS
+from sympy.functions.combinatorial.factorials import factorial
+from sympy.functions.elementary.piecewise import Piecewise
 from sympy.utilities.iterables import has_dups
 
 ###############################################################################
@@ -29,7 +33,6 @@ def Eijk(*args, **kwargs):
 
 def eval_levicivita(*args):
     """Evaluate Levi-Civita symbol."""
-    from sympy.functions.combinatorial.factorials import factorial
     n = len(args)
     return prod(
         prod(args[j] - args[i] for j in range(i + 1, n))
@@ -37,7 +40,7 @@ def eval_levicivita(*args):
     # converting factorial(i) to int is slightly faster
 
 
-class LeviCivita(Function):
+class LeviCivita(DefinedFunction):
     """
     Represent the Levi-Civita symbol.
 
@@ -81,11 +84,11 @@ class LeviCivita(Function):
         if has_dups(args):
             return S.Zero
 
-    def doit(self):
+    def doit(self, **hints):
         return eval_levicivita(*self.args)
 
 
-class KroneckerDelta(Function):
+class KroneckerDelta(DefinedFunction):
     """
     The discrete, or Kronecker, delta function.
 
@@ -191,7 +194,7 @@ class KroneckerDelta(Function):
         # to make KroneckerDelta canonical
         # following lines will check if inputs are in order
         # if not, will return KroneckerDelta with correct order
-        if i != min(i, j, key=default_sort_key):
+        if default_sort_key(j) < default_sort_key(i):
             if delta_range:
                 return cls(j, i, delta_range)
             else:
@@ -468,6 +471,5 @@ class KroneckerDelta(Function):
         return self.args[0:2]
 
     def _eval_rewrite_as_Piecewise(self, *args, **kwargs):
-        from sympy.functions.elementary.piecewise import Piecewise
         i, j = args
         return Piecewise((0, Ne(i, j)), (1, True))

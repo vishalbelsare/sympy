@@ -1,3 +1,4 @@
+from __future__ import annotations
 import math
 
 from sympy.concrete.products import (Product, product)
@@ -7,7 +8,8 @@ from sympy.core.evalf import N
 from sympy.core.function import (Function, nfloat)
 from sympy.core.mul import Mul
 from sympy.core import (GoldenRatio)
-from sympy.core.numbers import (E, I, Rational, oo, zoo, nan, pi)
+from sympy.core.numbers import (AlgebraicNumber, E, Float, I, Rational,
+                                oo, zoo, nan, pi)
 from sympy.core.power import Pow
 from sympy.core.relational import Eq
 from sympy.core.singleton import S
@@ -23,13 +25,16 @@ from sympy.functions.elementary.miscellaneous import (Max, sqrt)
 from sympy.functions.elementary.trigonometric import (acos, atan, cos, sin, tan)
 from sympy.integrals.integrals import (Integral, integrate)
 from sympy.polys.polytools import factor
+from sympy.polys.rootoftools import CRootOf
+from sympy.polys.specialpolys import cyclotomic_poly
+from sympy.printing import srepr
 from sympy.printing.str import sstr
 from sympy.simplify.simplify import simplify
 from sympy.core.numbers import comp
 from sympy.core.evalf import (complex_accuracy, PrecisionExhausted,
-    scaled_zero, get_integer_part, as_mpmath, evalf)
-from mpmath import inf, ninf
-from mpmath.libmp.libmpf import from_float
+                              scaled_zero, get_integer_part, as_mpmath, evalf, _evalf_with_bounded_error)
+from mpmath import inf, ninf, make_mpc
+from sympy.external.mpmath import from_float, fzero, finf
 from sympy.core.expr import unchanged
 from sympy.testing.pytest import raises, XFAIL
 from sympy.abc import n, x, y
@@ -40,7 +45,6 @@ def NS(e, n=15, **options):
 
 
 def test_evalf_helpers():
-    from mpmath.libmp import finf
     assert complex_accuracy((from_float(2.0), None, 35, None)) == 35
     assert complex_accuracy((from_float(2.0), from_float(10.0), 35, 100)) == 37
     assert complex_accuracy(
@@ -163,9 +167,13 @@ def test_evalf_logs():
 def test_evalf_trig():
     assert NS('sin(1)', 15) == '0.841470984807897'
     assert NS('cos(1)', 15) == '0.540302305868140'
+    assert NS('tan(1)', 15) == '1.55740772465490'
     assert NS('sin(10**-6)', 15) == '9.99999999999833e-7'
     assert NS('cos(10**-6)', 15) == '0.999999999999500'
+    assert NS('tan(10**-6)', 15) == '1.00000000000033e-6'
     assert NS('sin(E*10**100)', 15) == '0.409160531722613'
+    assert NS('tan(I)',15) =='0.761594155955765*I'
+    assert NS('tan(1000*I)',15)== '1.00000000000000*I'
     # Some input near roots
     assert NS(sin(exp(pi*sqrt(163))*pi), 15) == '-2.35596641936785e-12'
     assert NS(sin(pi*10**100 + Rational(7, 10**5), evaluate=False), 15, maxn=120) == \
@@ -268,8 +276,8 @@ def test_evalf_bugs():
 def test_evalf_integer_parts():
     a = floor(log(8)/log(2) - exp(-1000), evaluate=False)
     b = floor(log(8)/log(2), evaluate=False)
-    assert a.evalf() == 3
-    assert b.evalf() == 3
+    assert a.evalf() == 3.0
+    assert b.evalf() == 3.0
     # equals, as a fallback, can still fail but it might succeed as here
     assert ceiling(10*(sin(1)**2 + cos(1)**2)) == 10
 
@@ -282,10 +290,10 @@ def test_evalf_integer_parts():
     assert int(floor(GoldenRatio**1000 / sqrt(5) + S.Half)
                .evalf(1000)) == fibonacci(1000)
 
-    assert ceiling(x).evalf(subs={x: 3}) == 3
+    assert ceiling(x).evalf(subs={x: 3}) == 3.0
     assert ceiling(x).evalf(subs={x: 3*I}) == 3.0*I
     assert ceiling(x).evalf(subs={x: 2 + 3*I}) == 2.0 + 3.0*I
-    assert ceiling(x).evalf(subs={x: 3.}) == 3
+    assert ceiling(x).evalf(subs={x: 3.}) == 3.0
     assert ceiling(x).evalf(subs={x: 3.*I}) == 3.0*I
     assert ceiling(x).evalf(subs={x: 2. + 3*I}) == 2.0 + 3.0*I
 
@@ -301,6 +309,8 @@ def test_evalf_integer_parts():
 
     # issue 20076
     assert 260515 - floor(260515/pi + 1/2) * pi == atan(tan(260515))
+
+    assert floor(x).evalf(subs={x: sqrt(2)}) == 1.0
 
 
 def test_evalf_trig_zero_detection():
@@ -357,11 +367,11 @@ def test_evalf_power_subs_bugs():
     assert (x**2).evalf(subs={x: 0}) == 0
     assert sqrt(x).evalf(subs={x: 0}) == 0
     assert (x**Rational(2, 3)).evalf(subs={x: 0}) == 0
-    assert (x**x).evalf(subs={x: 0}) == 1
-    assert (3**x).evalf(subs={x: 0}) == 1
-    assert exp(x).evalf(subs={x: 0}) == 1
-    assert ((2 + I)**x).evalf(subs={x: 0}) == 1
-    assert (0**x).evalf(subs={x: 0}) == 1
+    assert (x**x).evalf(subs={x: 0}) == 1.0
+    assert (3**x).evalf(subs={x: 0}) == 1.0
+    assert exp(x).evalf(subs={x: 0}) == 1.0
+    assert ((2 + I)**x).evalf(subs={x: 0}) == 1.0
+    assert (0**x).evalf(subs={x: 0}) == 1.0
 
 
 def test_evalf_arguments():
@@ -374,7 +384,7 @@ def test_implemented_function_evalf():
     f = implemented_function(f, lambda x: x + 1)
     assert str(f(x)) == "f(x)"
     assert str(f(2)) == "f(2)"
-    assert f(2).evalf() == 3
+    assert f(2).evalf() == 3.0
     assert f(x).evalf() == f(x)
     f = implemented_function(Function('sin'), lambda x: x + 1)
     assert f(2).evalf() != sin(2)
@@ -456,7 +466,7 @@ def test_old_docstring():
 
 
 def test_issue_4806():
-    assert integrate(atan(x)**2, (x, -1, 1)).evalf().round(1) == 0.5
+    assert integrate(atan(x)**2, (x, -1, 1)).evalf().round(1) == Float(0.5, 1)
     assert atan(0, evaluate=False).n() == 0
 
 
@@ -547,7 +557,7 @@ def test_issue_9326():
     d1 = Dummy('d')
     d2 = Dummy('d')
     e = d1 + d2
-    assert e.evalf(subs = {d1: 1, d2: 2}) == 3
+    assert e.evalf(subs = {d1: 1, d2: 2}) == 3.0
 
 
 def test_issue_10323():
@@ -658,3 +668,101 @@ def test_evalf_with_zoo():
     assert log(zoo, evaluate=False).evalf() == zoo
     assert zoo.evalf(chop=True) == zoo
     assert x.evalf(subs={x: zoo}) == zoo
+
+
+def test_evalf_with_bounded_error():
+    cases = [
+        # zero
+        (Rational(0), None, 1),
+        # zero im part
+        (pi, None, 10),
+        # zero real part
+        (pi*I, None, 10),
+        # re and im nonzero
+        (2-3*I, None, 5),
+        # similar tests again, but using eps instead of m
+        (Rational(0), Rational(1, 2), None),
+        (pi, Rational(1, 1000), None),
+        (pi * I, Rational(1, 1000), None),
+        (2 - 3 * I, Rational(1, 1000), None),
+        # very large eps
+        (2 - 3 * I, Rational(1000), None),
+        # case where x already small, hence some cancellation in p = m + n - 1
+        (Rational(1234, 10**8), Rational(1, 10**12), None),
+    ]
+    for x0, eps, m in cases:
+        a, b, _, _ = evalf(x0, 53, {})
+        c, d, _, _ = _evalf_with_bounded_error(x0, eps, m)
+        if eps is None:
+            eps = 2**(-m)
+        z = make_mpc((a or fzero, b or fzero))
+        w = make_mpc((c or fzero, d or fzero))
+        assert abs(w - z) < eps
+
+    # eps must be positive
+    raises(ValueError, lambda: _evalf_with_bounded_error(pi, Rational(0)))
+    raises(ValueError, lambda: _evalf_with_bounded_error(pi, -pi))
+    raises(ValueError, lambda: _evalf_with_bounded_error(pi, I))
+
+
+def test_issue_22849():
+    a = -8 + 3 * sqrt(3)
+    x = AlgebraicNumber(a)
+    assert evalf(a, 1, {}) == evalf(x, 1, {})
+
+
+def test_evalf_real_alg_num():
+    # This test demonstrates why the entry for `AlgebraicNumber` in
+    # `sympy.core.evalf._create_evalf_table()` has to use `x.to_root()`,
+    # instead of `x.as_expr()`. If the latter is used, then `z` will be
+    # a complex number with `0.e-20` for imaginary part, even though `a5`
+    # is a real number.
+    zeta = Symbol('zeta')
+    a5 = AlgebraicNumber(CRootOf(cyclotomic_poly(5), -1), [-1, -1, 0, 0], alias=zeta)
+    z = a5.evalf()
+    assert isinstance(z, Float)
+    assert not hasattr(z, '_mpc_')
+    assert hasattr(z, '_mpf_')
+
+
+def test_issue_20733():
+    expr = 1/((x - 9)*(x - 8)*(x - 7)*(x - 4)**2*(x - 3)**3*(x - 2))
+    assert str(expr.evalf(1, subs={x:1})) == '-4.e-5'
+    assert str(expr.evalf(2, subs={x:1})) == '-4.1e-5'
+    assert str(expr.evalf(11, subs={x:1})) == '-4.1335978836e-5'
+    assert str(expr.evalf(20, subs={x:1})) == '-0.000041335978835978835979'
+
+    expr = Mul(*((x - i) for i in range(2, 1000)))
+    assert srepr(expr.evalf(2, subs={x: 1})) == "Float('4.0271e+2561', precision=10)"
+    assert srepr(expr.evalf(10, subs={x: 1})) == "Float('4.02790050126e+2561', precision=37)"
+    assert srepr(expr.evalf(53, subs={x: 1})) == "Float('4.0279005012722099453824067459760158730668154575647110393e+2561', precision=179)"
+
+
+def test_issue_28280():
+    # This test demonstrates why `evalf_log` needs to specially handle
+    # arguments close to 1.If the argument is evaluated directly
+    # as `1 + 10**-10` at default precision,it loses the small
+    # term and becomes exactly 1. This results in `log(1) -> 0`
+    # causing `x > 20` to incorrectly evaluate to False.
+    x = 20 + log(1 + S(10)**-10)
+    assert x > 20
+    y = 20 + log(1 + S(10)**-9)
+    assert y > 20
+
+
+def test_issue_13365():
+    # The quotient between successive terms of a hypergeometric series need not
+    # have integral numerator and denominator. For 1.9**n/factorial(n) the ratio
+    # is 1.9/(n + 1), and truncating 1.9 to an integer before applying the ratio
+    # turned the series into the one for exp(1), so evalf returned e instead of
+    # exp(1.9). See https://github.com/sympy/sympy/issues/13365
+    x = Symbol('x', integer=True, positive=True)
+    s = Sum(1.9**x/factorial(x), (x, 0, oo))
+    assert abs((s - exp(Rational(19, 10))).evalf()) < 1e-12
+
+    # The same truncation happened in both hypsum branches, so exercise the
+    # direct-summation branch too: the ratio of the series for exp(1.9*x**2) is
+    # 1.9*(2*n + 1)/(n + 1), whose numerator is non-integral.
+    t = Symbol('t', integer=True, nonnegative=True)
+    s2 = Sum(1.9**t * t / factorial(t), (t, 0, oo))
+    assert abs((s2 - 19*exp(Rational(19, 10))/10).evalf()) < 1e-12

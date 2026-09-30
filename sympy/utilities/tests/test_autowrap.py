@@ -1,10 +1,12 @@
 # Tests that require installed backends go into
 # sympy/test_external/test_autowrap
+from __future__ import annotations
 
 import os
 import tempfile
 import shutil
 from io import StringIO
+from pathlib import Path
 
 from sympy.core import symbols, Eq
 from sympy.utilities.autowrap import (autowrap, binary_function,
@@ -92,14 +94,10 @@ def test_cython_wrapper_compile_flags():
     code_gen = CythonCodeWrapper(CCodeGen())
 
     expected = """\
-try:
-    from setuptools import setup
-    from setuptools import Extension
-except ImportError:
-    from distutils.core import setup
-    from distutils.extension import Extension
+from setuptools import setup
+from setuptools import Extension
 from Cython.Build import cythonize
-cy_opts = {}
+cy_opts = {'compiler_directives': {'language_level': '3'}}
 
 ext_mods = [Extension(
     'wrapper_module_%(num)s', ['wrapper_module_%(num)s.pyx', 'wrapped_code_%(num)s.c'],
@@ -117,8 +115,7 @@ setup(ext_modules=cythonize(ext_mods, **cy_opts))
     setup_file_path = os.path.join(temp_dir, 'setup.py')
 
     code_gen._prepare_files(routine, build_dir=temp_dir)
-    with open(setup_file_path) as f:
-        setup_text = f.read()
+    setup_text = Path(setup_file_path).read_text()
     assert setup_text == expected
 
     code_gen = CythonCodeWrapper(CCodeGen(),
@@ -130,12 +127,8 @@ setup(ext_modules=cythonize(ext_mods, **cy_opts))
                                  cythonize_options={'compiler_directives': {'boundscheck': False}}
                                  )
     expected = """\
-try:
-    from setuptools import setup
-    from setuptools import Extension
-except ImportError:
-    from distutils.core import setup
-    from distutils.extension import Extension
+from setuptools import setup
+from setuptools import Extension
 from Cython.Build import cythonize
 cy_opts = {'compiler_directives': {'boundscheck': False}}
 
@@ -151,17 +144,12 @@ setup(ext_modules=cythonize(ext_mods, **cy_opts))
 """ % {'num': CodeWrapper._module_counter}
 
     code_gen._prepare_files(routine, build_dir=temp_dir)
-    with open(setup_file_path) as f:
-        setup_text = f.read()
+    setup_text = Path(setup_file_path).read_text()
     assert setup_text == expected
 
     expected = """\
-try:
-    from setuptools import setup
-    from setuptools import Extension
-except ImportError:
-    from distutils.core import setup
-    from distutils.extension import Extension
+from setuptools import setup
+from setuptools import Extension
 from Cython.Build import cythonize
 cy_opts = {'compiler_directives': {'boundscheck': False}}
 import numpy as np
@@ -179,8 +167,7 @@ setup(ext_modules=cythonize(ext_mods, **cy_opts))
 
     code_gen._need_numpy = True
     code_gen._prepare_files(routine, build_dir=temp_dir)
-    with open(setup_file_path) as f:
-        setup_text = f.read()
+    setup_text = Path(setup_file_path).read_text()
     assert setup_text == expected
 
     TmpFileManager.cleanup()
@@ -261,13 +248,16 @@ def test_autowrap_store_files():
 def test_autowrap_store_files_issue_gh12939():
     x, y = symbols('x y')
     tmp = './tmp'
+    saved_cwd = os.getcwd()
+    temp_cwd = tempfile.mkdtemp()
     try:
+        os.chdir(temp_cwd)
         f = autowrap(x + y, backend='dummy', tempdir=tmp)
         assert f() == str(x + y)
         assert os.access(tmp, os.F_OK)
     finally:
-        shutil.rmtree(tmp)
-
+        os.chdir(saved_cwd)
+        shutil.rmtree(temp_cwd)
 
 
 def test_binary_function():
@@ -293,7 +283,11 @@ static PyMethodDef wrapper_module_%(num)sMethods[] = {
         {NULL, NULL, 0, NULL}
 };
 
+#ifdef NPY_1_19_API_VERSION
+static void test_ufunc(char **args, const npy_intp *dimensions, const npy_intp* steps, void* data)
+#else
 static void test_ufunc(char **args, npy_intp *dimensions, npy_intp* steps, void* data)
+#endif
 {
     npy_intp i;
     npy_intp n = dimensions[0];
@@ -387,7 +381,11 @@ static PyMethodDef wrapper_module_%(num)sMethods[] = {
         {NULL, NULL, 0, NULL}
 };
 
+#ifdef NPY_1_19_API_VERSION
+static void multitest_ufunc(char **args, const npy_intp *dimensions, const npy_intp* steps, void* data)
+#else
 static void multitest_ufunc(char **args, npy_intp *dimensions, npy_intp* steps, void* data)
+#endif
 {
     npy_intp i;
     npy_intp n = dimensions[0];

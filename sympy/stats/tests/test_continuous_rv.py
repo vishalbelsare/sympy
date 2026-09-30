@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.concrete.summations import Sum
 from sympy.core.function import (Lambda, diff, expand_func)
 from sympy.core.mul import Mul
@@ -16,8 +17,9 @@ from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import (asin, atan, cos, sin, tan)
 from sympy.functions.special.bessel import (besseli, besselj, besselk)
 from sympy.functions.special.beta_functions import beta
-from sympy.functions.special.error_functions import (erf, erfc, erfi, expint)
+from sympy.functions.special.error_functions import (erf, erfc, erfi, expint, owens_t)
 from sympy.functions.special.gamma_functions import (gamma, lowergamma, uppergamma)
+from sympy.functions.special.zeta_functions import zeta
 from sympy.functions.special.hyper import hyper
 from sympy.integrals.integrals import Integral
 from sympy.logic.boolalg import (And, Or)
@@ -30,11 +32,12 @@ from sympy.sets.sets import FiniteSet, Complement, Intersection
 from sympy.stats import (P, E, where, density, variance, covariance, skewness, kurtosis, median,
                          given, pspace, cdf, characteristic_function, moment_generating_function,
                          ContinuousRV, Arcsin, Benini, Beta, BetaNoncentral, BetaPrime,
-                         Cauchy, Chi, ChiSquared, ChiNoncentral, Dagum, Erlang, ExGaussian,
+                         Cauchy, Chi, ChiSquared, ChiNoncentral, Dagum, Davis, Erlang, ExGaussian,
                          Exponential, ExponentialPower, FDistribution, FisherZ, Frechet, Gamma,
                          GammaInverse, Gompertz, Gumbel, Kumaraswamy, Laplace, Levy, Logistic, LogCauchy,
                          LogLogistic, LogitNormal, LogNormal, Maxwell, Moyal, Nakagami, Normal, GaussianInverse,
-                         Pareto, PowerFunction, QuadraticU, RaisedCosine, Rayleigh, Reciprocal, ShiftedGompertz, StudentT,
+                         Pareto, PowerFunction, QuadraticU, RaisedCosine, Rayleigh, Reciprocal, ShiftedGompertz,
+                         SkewNormal, StudentT,
                          Trapezoidal, Triangular, Uniform, UniformSum, VonMises, Weibull, coskewness,
                          WignerSemicircle, Wald, correlation, moment, cmoment, smoment, quantile,
                          Lomax, BoundedPareto)
@@ -101,7 +104,6 @@ def test_ContinuousDomain():
     assert Y.pspace.domain.set == Interval(0, oo)
 
 
-@slow
 def test_multiple_normal():
     X, Y = Normal('x', 0, 1), Normal('y', 0, 1)
     p = Symbol("p", positive=True)
@@ -127,6 +129,7 @@ def test_multiple_normal():
     assert E(X, Eq(X + Y, 0)) == 0
     assert variance(X, Eq(X + Y, 0)) == S.Half
     assert quantile(X)(p) == sqrt(2)*erfinv(2*p - S.One)
+
 
 def test_symbolic():
     mu1, mu2 = symbols('mu1 mu2', real=True)
@@ -596,6 +599,17 @@ def test_dagum():
     X = Dagum('x', 1, 1, 1)
     assert median(X) == FiniteSet(1)
 
+def test_davis():
+    b = Symbol("b", positive=True)
+    n = Symbol("n", positive=True)
+    mu = Symbol("mu", positive=True)
+
+    X = Davis('x', b, n, mu)
+    dividend = b**n*(x - mu)**(-1-n)
+    divisor = (exp(b/(x-mu))-1)*(gamma(n)*zeta(n))
+    assert density(X)(x) == dividend/divisor
+
+
 def test_erlang():
     k = Symbol("k", integer=True, positive=True)
     l = Symbol("l", positive=True)
@@ -631,6 +645,7 @@ def test_exgaussian():
                                       sqrt(s**2 + l**(-2)))
 
 
+@slow
 def test_exponential():
     rate = Symbol('lambda', positive=True)
     X = Exponential('x', rate)
@@ -958,6 +973,8 @@ def test_maxwell():
     assert cdf(X)(x) == erf(sqrt(2)*x/(2*a)) - sqrt(2)*x*exp(-x**2/(2*a**2))/(sqrt(pi)*a)
     assert diff(cdf(X)(x), x) == density(X)(x)
 
+
+@slow
 def test_Moyal():
     mu = Symbol('mu',real=False)
     sigma = Symbol('sigma', positive=True)
@@ -1140,6 +1157,29 @@ def test_shiftedgompertz():
     assert density(X)(x) == b*(eta*(1 - exp(-b*x)) + 1)*exp(-b*x)*exp(-eta*exp(-b*x))
 
 
+def test_skewnormal():
+    xi = Symbol("xi", real=True)
+    omega = Symbol("omega", positive=True)
+    alpha = Symbol("alpha", real=True)
+
+    X = SkewNormal("x", xi, omega, alpha)
+    z = (x - xi)/omega
+    assert density(X)(x) == exp(-z**2/2)*(1 + erf(alpha*z/sqrt(2)))/(sqrt(2*pi)*omega)
+    assert cdf(X)(x) == erf(sqrt(2)*z/2)/2 + S.Half - 2*owens_t(z, alpha)
+
+    # alpha = 0 reduces to a Normal distribution
+    assert density(SkewNormal("x", xi, omega, 0))(x) == density(Normal("x", xi, omega))(x)
+    assert cdf(SkewNormal("x", xi, omega, 0))(x) == cdf(Normal("x", xi, omega))(x)
+
+    # -X ~ SkewNormal(-xi, omega, -alpha)
+    Y = SkewNormal("y", -xi, omega, -alpha)
+    assert simplify(density(X)(x) - density(Y)(-x)) == 0
+
+    raises(ValueError, lambda: SkewNormal('x', 0, -1, 1))
+    raises(ValueError, lambda: SkewNormal('x', 0, 0, 1))
+    raises(ValueError, lambda: SkewNormal('x', 0, 1, I))
+
+
 def test_studentt():
     nu = Symbol("nu", positive=True)
 
@@ -1225,7 +1265,9 @@ def test_uniform():
     assert c(Rational(7, 2)) == Rational(1, 4)
     assert c(5) == 1 and c(6) == 1
 
+
 @XFAIL
+@slow
 def test_uniform_P():
     """ This stopped working because SingleContinuousPSpace.compute_density no
     longer calls integrate on a DiracDelta but rather just solves directly.
@@ -1414,7 +1456,6 @@ def test_issue_10003():
     assert P(G < -1) is S.Zero
 
 
-@slow
 def test_precomputed_cdf():
     x = symbols("x", real=True)
     mu = symbols("mu", real=True)
@@ -1481,6 +1522,7 @@ def test_long_precomputed_cdf():
             Laplace("LA", -5, 4),
             Logistic("L", -6, 7),
             Nakagami("N", 2, 7),
+            SkewNormal("SN", -2, 3, 4),
             StudentT("S", 4)
             ]
     for distr in distribs:
@@ -1550,8 +1592,8 @@ def test_ContinuousDistributionHandmade():
         (S.Half, (x>=2)&(x<3)), (0, True)))
     dens = ContinuousDistributionHandmade(dens, set=Interval(0, 3))
     space = SingleContinuousPSpace(z, dens)
-    assert dens.pdf == Lambda(x, Piecewise((1/2, (x >= 0) & (x < 1)),
-        (0, (x >= 1) & (x < 2)), (1/2, (x >= 2) & (x < 3)), (0, True)))
+    assert dens.pdf == Lambda(x, Piecewise((S(1)/2, (x >= 0) & (x < 1)),
+        (0, (x >= 1) & (x < 2)), (S(1)/2, (x >= 2) & (x < 3)), (0, True)))
     assert median(space.value) == Interval(1, 2)
     assert E(space.value) == Rational(3, 2)
     assert variance(space.value) == Rational(13, 12)
@@ -1561,3 +1603,7 @@ def test_issue_16318():
     # test compute_expectation function of the SingleContinuousDomain
     N = SingleContinuousDomain(x, Interval(0, 1))
     raises(ValueError, lambda: SingleContinuousDomain.compute_expectation(N, x+1, {x, y}))
+
+def test_compute_density():
+    X = Normal('X', 0, Symbol("sigma")**2)
+    raises(ValueError, lambda: density(X**5 + X))

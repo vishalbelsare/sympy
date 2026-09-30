@@ -1,3 +1,5 @@
+from __future__ import annotations
+import itertools
 import random
 
 from sympy.combinatorics import Permutation
@@ -175,7 +177,7 @@ def test_array_permutedims():
         raises(ValueError, lambda: po.transpose())
         raises(ValueError, lambda: po.adjoint())
 
-        assert permutedims(po, reversed(range(po.rank()))) == ArrayType(
+        assert permutedims(po, reversed(range(po.ndim))) == ArrayType(
             [[[[[[sa[0], sa[72]], [sa[36], sa[108]]], [[sa[12], sa[84]], [sa[48], sa[120]]], [[sa[24],
                                                                                                sa[96]], [sa[60], sa[132]]]],
                [[[sa[4], sa[76]], [sa[40], sa[112]]], [[sa[16],
@@ -301,11 +303,30 @@ def test_array_permutedims():
         assert B.transpose() == SparseArrayType({10000: 1, 1: 2}, (20000, 10000))
 
 
+def test_permutedims_with_indices():
+    A = Array(range(32)).reshape(2, 2, 2, 2, 2)
+    indices_new = list("abcde")
+    indices_old = list("ebdac")
+    new_A = permutedims(A, index_order_new=indices_new, index_order_old=indices_old)
+    for a, b, c, d, e in itertools.product(range(2), range(2), range(2), range(2), range(2)):
+        assert new_A[a, b, c, d, e] == A[e, b, d, a, c]
+    indices_old = list("cabed")
+    new_A = permutedims(A, index_order_new=indices_new, index_order_old=indices_old)
+    for a, b, c, d, e in itertools.product(range(2), range(2), range(2), range(2), range(2)):
+        assert new_A[a, b, c, d, e] == A[c, a, b, e, d]
+    raises(ValueError, lambda: permutedims(A, index_order_old=list("aacde"), index_order_new=list("abcde")))
+    raises(ValueError, lambda: permutedims(A, index_order_old=list("abcde"), index_order_new=list("abcce")))
+    raises(ValueError, lambda: permutedims(A, index_order_old=list("abcde"), index_order_new=list("abce")))
+    raises(ValueError, lambda: permutedims(A, index_order_old=list("abce"), index_order_new=list("abce")))
+    raises(ValueError, lambda: permutedims(A, [2, 1, 0, 3, 4], index_order_old=list("abcde")))
+    raises(ValueError, lambda: permutedims(A, [2, 1, 0, 3, 4], index_order_new=list("abcde")))
+
+
 def test_flatten():
     from sympy.matrices.dense import Matrix
     for ArrayType in [ImmutableDenseNDimArray, ImmutableSparseNDimArray, Matrix]:
         A = ArrayType(range(24)).reshape(4, 6)
-        assert [i for i in Flatten(A)] == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+        assert list(Flatten(A)) == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
 
         for i, v in enumerate(Flatten(A)):
             assert i == v

@@ -1,13 +1,13 @@
 """Bosonic quantum operators."""
+from __future__ import annotations
 
-from sympy.core.mul import Mul
 from sympy.core.numbers import Integer
 from sympy.core.singleton import S
 from sympy.functions.elementary.complexes import conjugate
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.physics.quantum import Operator
-from sympy.physics.quantum import HilbertSpace, FockSpace, Ket, Bra, IdentityOperator
+from sympy.physics.quantum import HilbertSpace, FockSpace, Ket, Bra
 from sympy.functions.special.tensor_functions import KroneckerDelta
 
 
@@ -92,21 +92,6 @@ class BosonOp(Operator):
     def _eval_adjoint(self):
         return BosonOp(str(self.name), not self.is_annihilation)
 
-    def __mul__(self, other):
-
-        if other == IdentityOperator(2):
-            return self
-
-        if isinstance(other, Mul):
-            args1 = tuple(arg for arg in other.args if arg.is_commutative)
-            args2 = tuple(arg for arg in other.args if not arg.is_commutative)
-            x = self
-            for y in args2:
-                x = x * y
-            return Mul(*args1) * x
-
-        return Mul(self, other)
-
     def _print_contents_latex(self, printer, *args):
         if self.is_annihilation:
             return r'{%s}' % str(self.name)
@@ -157,7 +142,7 @@ class BosonFockKet(Ket):
     def _eval_innerproduct_BosonFockBra(self, bra, **hints):
         return KroneckerDelta(self.n, bra.n)
 
-    def _apply_operator_BosonOp(self, op, **options):
+    def _apply_from_right_to_BosonOp(self, op, **options):
         if op.is_annihilation:
             return sqrt(self.n) * BosonFockKet(self.n - 1)
         else:
@@ -223,7 +208,7 @@ class BosonCoherentKet(Ket):
         else:
             return exp(-(abs(self.alpha)**2 + abs(bra.alpha)**2 - 2 * conjugate(bra.alpha) * self.alpha)/2)
 
-    def _apply_operator_BosonOp(self, op, **options):
+    def _apply_from_right_to_BosonOp(self, op, **options):
         if op.is_annihilation:
             return self.alpha * self
         else:

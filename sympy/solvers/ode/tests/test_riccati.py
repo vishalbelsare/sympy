@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.random import randint
 from sympy.core.function import Function
 from sympy.core.mul import Mul
@@ -657,7 +658,7 @@ def test_rational_laurent_series():
     4. mul - Multiplicity of x0 if x0 is a pole of
        the rational function (0 otherwise).
     5. n - Number of terms upto which the series
-       is to be calcuated.
+       is to be calculated.
     """
     tests = [
     # Laurent series about simple pole (Multiplicity = 1)
@@ -667,7 +668,7 @@ def test_rational_laurent_series():
         S(1), 1, 6,
         {1: 7, 0: -8, -1: 9, -2: -9, -3: 9, -4: -9}
     ),
-    # Laurent series about multiple pole (Multiplicty > 1)
+    # Laurent series about multiple pole (Multiplicity > 1)
     (
         Poly(64*x**3 - 1728*x + 1216, x, extension=True),
         Poly(64*x**4 - 80*x**3 - 831*x**2 + 1809*x - 972, x, extension=True),
@@ -710,7 +711,7 @@ def test_rational_laurent_series():
         assert ser == rational_laurent_series(num, den, x, x0, mul, n)
 
 
-def check_dummy_sol(eq, solse, dummy_sym):
+def check_dummy_sol(eq, solse, dummy_sym, gensol=False):
     """
     Helper function to check if actual solution
     matches expected solution if actual solution
@@ -720,12 +721,13 @@ def check_dummy_sol(eq, solse, dummy_sym):
         eq = eq.lhs - eq.rhs
     _, funcs = match_riccati(eq, f, x)
 
-    sols = solve_riccati(f(x), x, *funcs)
+    sols = solve_riccati(f(x), x, *funcs, gensol=gensol)
     C1 = Dummy('C1')
     sols = [sol.subs(C1, dummy_sym) for sol in sols]
 
-    assert all([x[0] for x in checkodesol(eq, sols)])
-    assert all([s1.dummy_eq(s2, dummy_sym) for s1, s2 in zip(sols, solse)])
+    assert all(x[0] for x in checkodesol(eq, sols))
+    assert len(sols) == len(solse)
+    assert all(s1.dummy_eq(s2, dummy_sym) for s1, s2 in zip(sols, solse))
 
 
 def test_solve_riccati():
@@ -851,6 +853,25 @@ def test_solve_riccati():
     )]
     for eq, sol in tests:
         check_dummy_sol(eq, sol, C0)
+
+
+def test_solve_riccati_gensol():
+    C0 = Dummy('C0')
+    tests = [
+    (
+        f(x).diff(x) - (x**2 + 3*x*f(x) + f(x)**2)/x**2,
+        [Eq(f(x), (-C0*x - x*log(x) - x)/(C0 + log(x)))],
+    ),
+    (
+        f(x).diff(x) + f(x)**2,
+        [Eq(f(x), 1/(C0 + x))],
+    ),
+    (
+        f(x).diff(x) + f(x)**2 - 2/x**2,
+        [Eq(f(x), (-C0 + 2*x**3)/(C0*x + x**4))],
+    )]
+    for eq, sol in tests:
+        check_dummy_sol(eq, sol, C0, gensol=True)
 
 
 @slow

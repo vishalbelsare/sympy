@@ -14,6 +14,7 @@ Chi
 ChiNoncentral
 ChiSquared
 Dagum
+Davis
 Erlang
 ExGaussian
 Exponential
@@ -45,6 +46,7 @@ RaisedCosine
 Rayleigh
 Reciprocal
 ShiftedGompertz
+SkewNormal
 StudentT
 Trapezoidal
 Triangular
@@ -55,6 +57,7 @@ Wald
 Weibull
 WignerSemicircle
 """
+from __future__ import annotations
 
 
 
@@ -75,11 +78,12 @@ from sympy.functions.elementary.complexes import (Abs, sign)
 from sympy.functions.elementary.exponential import log
 from sympy.functions.elementary.hyperbolic import sinh
 from sympy.functions.elementary.integers import floor
-from sympy.functions.elementary.miscellaneous import sqrt
+from sympy.functions.elementary.miscellaneous import sqrt, Max, Min
 from sympy.functions.elementary.piecewise import Piecewise
 from sympy.functions.elementary.trigonometric import asin
-from sympy.functions.special.error_functions import (erf, erfc, erfi, erfinv, expint)
+from sympy.functions.special.error_functions import (erf, erfc, erfi, erfinv, expint, owens_t)
 from sympy.functions.special.gamma_functions import (gamma, lowergamma, uppergamma)
+from sympy.functions.special.zeta_functions import zeta
 from sympy.functions.special.hyper import hyper
 from sympy.integrals.integrals import integrate
 from sympy.logic.boolalg import And
@@ -102,6 +106,7 @@ __all__ = ['ContinuousRV',
 'ChiNoncentral',
 'ChiSquared',
 'Dagum',
+'Davis',
 'Erlang',
 'ExGaussian',
 'Exponential',
@@ -133,6 +138,7 @@ __all__ = ['ContinuousRV',
 'RaisedCosine',
 'Rayleigh',
 'Reciprocal',
+'SkewNormal',
 'StudentT',
 'ShiftedGompertz',
 'Trapezoidal',
@@ -390,7 +396,7 @@ def Benini(name, alpha, beta, sigma):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Benini_distribution
-    .. [2] http://reference.wolfram.com/legacy/v8/ref/BeniniDistribution.html
+    .. [2] https://reference.wolfram.com/legacy/v8/ref/BeniniDistribution.html
 
     """
 
@@ -472,7 +478,7 @@ def Beta(name, alpha, beta):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Beta_distribution
-    .. [2] http://mathworld.wolfram.com/BetaDistribution.html
+    .. [2] https://mathworld.wolfram.com/BetaDistribution.html
 
     """
 
@@ -516,7 +522,7 @@ def BetaNoncentral(name, alpha, beta, lamda):
 
     alpha : Real number, `\alpha > 0`, a shape
     beta : Real number, `\beta > 0`, a shape
-    lamda: Real number, `\lambda >= 0`, noncentrality parameter
+    lamda : Real number, `\lambda \geq 0`, noncentrality parameter
 
     Returns
     =======
@@ -551,7 +557,8 @@ def BetaNoncentral(name, alpha, beta, lamda):
     /____,
     k = 0
 
-    Compute cdf with specific 'x', 'alpha', 'beta' and 'lamda' values as follows :
+    Compute cdf with specific 'x', 'alpha', 'beta' and 'lamda' values as follows:
+
     >>> cdf(BetaNoncentral("x", 1, 1, 1), evaluate=False)(2).doit()
     2*exp(1/2)
 
@@ -632,7 +639,7 @@ def BetaPrime(name, alpha, beta):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Beta_prime_distribution
-    .. [2] http://mathworld.wolfram.com/BetaPrimeDistribution.html
+    .. [2] https://mathworld.wolfram.com/BetaPrimeDistribution.html
 
     """
 
@@ -671,7 +678,7 @@ def BoundedPareto(name, alpha, left, right):
     Parameters
     ==========
 
-    alpha : Real Number, `alpha > 0`
+    alpha : Real Number, `\alpha > 0`
         Shape parameter
     left : Real Number, `left > 0`
         Location parameter
@@ -775,7 +782,7 @@ def Cauchy(name, x0, gamma):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Cauchy_distribution
-    .. [2] http://mathworld.wolfram.com/CauchyDistribution.html
+    .. [2] https://mathworld.wolfram.com/CauchyDistribution.html
 
     """
 
@@ -856,7 +863,7 @@ def Chi(name, k):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Chi_distribution
-    .. [2] http://mathworld.wolfram.com/ChiDistribution.html
+    .. [2] https://mathworld.wolfram.com/ChiDistribution.html
 
     """
 
@@ -1018,7 +1025,7 @@ def ChiSquared(name, k):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Chi_squared_distribution
-    .. [2] http://mathworld.wolfram.com/Chi-SquaredDistribution.html
+    .. [2] https://mathworld.wolfram.com/Chi-SquaredDistribution.html
     """
 
     return rv(name, ChiSquaredDistribution, (k, ))
@@ -1066,11 +1073,11 @@ def Dagum(name, p, a, b):
     ==========
 
     p : Real number
-        ``p > 0``, a shape.
+        `p > 0`, a shape.
     a : Real number
-        ``a > 0``, a shape.
+        `a > 0`, a shape.
     b : Real number
-        ``b > 0``, a scale.
+        `b > 0`, a scale.
 
     Returns
     =======
@@ -1105,6 +1112,78 @@ def Dagum(name, p, a, b):
     """
 
     return rv(name, DagumDistribution, (p, a, b))
+
+#-------------------------------------------------------------------------------
+# Davis distribution -----------------------------------------------------------
+
+class DavisDistribution(SingleContinuousDistribution):
+    _argnames = ('b', 'n', 'mu')
+
+    set = Interval(0, oo)
+
+    @staticmethod
+    def check(b, n, mu):
+        _value_check(b > 0, "Scale parameter b must be positive.")
+        _value_check(n > 1, "Shape parameter n must be above 1.")
+        _value_check(mu > 0, "Location parameter mu must be positive.")
+
+    def pdf(self, x):
+        b, n, mu = self.b, self.n, self.mu
+        dividend = b**n*(x - mu)**(-1-n)
+        divisor = (exp(b/(x-mu))-1)*(gamma(n)*zeta(n))
+        return dividend/divisor
+
+
+def Davis(name, b, n, mu):
+    r""" Create a continuous random variable with Davis distribution.
+
+    Explanation
+    ===========
+
+    The density of Davis distribution is given by
+
+    .. math::
+        f(x; \mu; b, n) := \frac{b^{n}(x - \mu)^{1-n}}{ \left( e^{\frac{b}{x-\mu}} - 1 \right) \Gamma(n)\zeta(n)}
+
+    with :math:`x \in [0,\infty]`.
+
+    Davis distribution is a generalization of the Planck's law of radiation from statistical physics. It is used for modeling income distribution.
+
+    Parameters
+    ==========
+    b : Real number
+        `p > 0`, a scale.
+    n : Real number
+        `n > 1`, a shape.
+    mu : Real number
+        `mu > 0`, a location.
+
+    Returns
+    =======
+
+    RandomSymbol
+
+    Examples
+    ========
+    >>> from sympy.stats import Davis, density
+    >>> from sympy import Symbol
+    >>> b = Symbol("b", positive=True)
+    >>> n = Symbol("n", positive=True)
+    >>> mu = Symbol("mu", positive=True)
+    >>> z = Symbol("z")
+    >>> X = Davis("x", b, n, mu)
+    >>> density(X)(z)
+    b**n*(-mu + z)**(-n - 1)/((exp(b/(-mu + z)) - 1)*gamma(n)*zeta(n))
+
+    References
+    ==========
+
+    .. [1] https://en.wikipedia.org/wiki/Davis_distribution
+    .. [2] https://reference.wolfram.com/language/ref/DavisDistribution.html
+
+    """
+    return rv(name, DavisDistribution, (b, n, mu))
+
 
 #-------------------------------------------------------------------------------
 # Erlang distribution ----------------------------------------------------------
@@ -1173,7 +1252,7 @@ def Erlang(name, k, l):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Erlang_distribution
-    .. [2] http://mathworld.wolfram.com/ErlangDistribution.html
+    .. [2] https://mathworld.wolfram.com/ErlangDistribution.html
 
     """
 
@@ -1236,17 +1315,18 @@ def ExGaussian(name, mean, std, rate):
 
     .. math::
         f(x) := \frac{\lambda}{2}e^{\frac{\lambda}{2}(2\mu+\lambda\sigma^2-2x)}
-            \text{erfc}(\frac{\mu + \lambda\sigma^2 - x}{\sqrt{2}\sigma})
+            \text{erfc}\left(\frac{\mu + \lambda\sigma^2 - x}{\sqrt{2}\sigma}\right)
 
     with $x > 0$. Note that the expected value is `1/\lambda`.
 
     Parameters
     ==========
 
-    mu : A Real number, the mean of Gaussian component
-    std: A positive Real number,
+    name : A string giving a name for this distribution
+    mean : A Real number, the mean of Gaussian component
+    std : A positive Real number,
         :math: `\sigma^2 > 0` the variance of Gaussian component
-    lambda: A positive Real number,
+    rate : A positive Real number,
         :math: `\lambda > 0` the rate of Exponential component
 
     Returns
@@ -1399,7 +1479,7 @@ def Exponential(name, rate):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Exponential_distribution
-    .. [2] http://mathworld.wolfram.com/ExponentialDistribution.html
+    .. [2] https://mathworld.wolfram.com/ExponentialDistribution.html
 
     """
 
@@ -1454,9 +1534,9 @@ def ExponentialPower(name, mu, alpha, beta):
 
     mu : Real number
         A location.
-    alpha : Real number,``alpha > 0``
+    alpha : Real number,`\alpha > 0`
         A  scale.
-    beta : Real number, ``beta > 0``
+    beta : Real number, `\beta > 0`
         A shape.
 
     Returns
@@ -1541,8 +1621,8 @@ def FDistribution(name, d1, d2):
     Parameters
     ==========
 
-    d1 : `d_1 > 0`, where d_1 is the degrees of freedom (n_1 - 1)
-    d2 : `d_2 > 0`, where d_2 is the degrees of freedom (n_2 - 1)
+    d1 : `d_1 > 0`, where `d_1` is the degrees of freedom (`n_1 - 1`)
+    d2 : `d_2 > 0`, where `d_2` is the degrees of freedom (`n_2 - 1`)
 
     Returns
     =======
@@ -1576,7 +1656,7 @@ def FDistribution(name, d1, d2):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/F-distribution
-    .. [2] http://mathworld.wolfram.com/F-Distribution.html
+    .. [2] https://mathworld.wolfram.com/F-Distribution.html
 
     """
 
@@ -1619,9 +1699,9 @@ def FisherZ(name, d1, d2):
     Parameters
     ==========
 
-    d1 : ``d_1 > 0``
+    d1 : `d_1 > 0`
         Degree of freedom.
-    d2 : ``d_2 > 0``
+    d2 : `d_2 > 0`
         Degree of freedom.
 
     Returns
@@ -1657,7 +1737,7 @@ def FisherZ(name, d1, d2):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Fisher%27s_z-distribution
-    .. [2] http://mathworld.wolfram.com/Fishersz-Distribution.html
+    .. [2] https://mathworld.wolfram.com/Fishersz-Distribution.html
 
     """
 
@@ -1792,7 +1872,7 @@ def Gamma(name, k, theta):
     Parameters
     ==========
 
-    k : Real number, ``k > 0``, a shape
+    k : Real number, `k > 0`, a shape
     theta : Real number, `\theta > 0`, a scale
 
     Returns
@@ -1844,7 +1924,7 @@ def Gamma(name, k, theta):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Gamma_distribution
-    .. [2] http://mathworld.wolfram.com/GammaDistribution.html
+    .. [2] https://mathworld.wolfram.com/GammaDistribution.html
 
     """
 
@@ -1899,8 +1979,8 @@ def GammaInverse(name, a, b):
     Parameters
     ==========
 
-    a : Real number, `a > 0` a shape
-    b : Real number, `b > 0` a scale
+    a : Real number, `a > 0`, a shape
+    b : Real number, `b > 0`, a scale
 
     Returns
     =======
@@ -2006,9 +2086,9 @@ def Gumbel(name, beta, mu, minimum=False):
     Parameters
     ==========
 
-    mu : Real number, 'mu' is a location
-    beta : Real number, 'beta > 0' is a scale
-    minimum : Boolean, by default, False, set to True for enabling minimum distribution
+    mu : Real number, `\mu`, a location
+    beta : Real number, `\beta > 0`, a scale
+    minimum : Boolean, by default ``False``, set to ``True`` for enabling minimum distribution
 
     Returns
     =======
@@ -2032,10 +2112,10 @@ def Gumbel(name, beta, mu, minimum=False):
     References
     ==========
 
-    .. [1] http://mathworld.wolfram.com/GumbelDistribution.html
+    .. [1] https://mathworld.wolfram.com/GumbelDistribution.html
     .. [2] https://en.wikipedia.org/wiki/Gumbel_distribution
-    .. [3] http://www.mathwave.com/help/easyfit/html/analyses/distributions/gumbel_max.html
-    .. [4] http://www.mathwave.com/help/easyfit/html/analyses/distributions/gumbel_min.html
+    .. [3] https://web.archive.org/web/20200628222206/http://www.mathwave.com/help/easyfit/html/analyses/distributions/gumbel_max.html
+    .. [4] https://web.archive.org/web/20200628222212/http://www.mathwave.com/help/easyfit/html/analyses/distributions/gumbel_min.html
 
     """
     return rv(name, GumbelDistribution, (beta, mu, minimum))
@@ -2077,13 +2157,13 @@ def Gompertz(name, b, eta):
     .. math::
         f(x) := b \eta e^{b x} e^{\eta} \exp \left(-\eta e^{bx} \right)
 
-    with :math: 'x \in [0, \inf)'.
+    with :math:`x \in [0, \infty)`.
 
     Parameters
     ==========
 
-    b: Real number, 'b > 0' a scale
-    eta: Real number, 'eta > 0' a shape
+    b : Real number, `b > 0`, a scale
+    eta : Real number, `\eta > 0`, a shape
 
     Returns
     =======
@@ -2155,8 +2235,8 @@ def Kumaraswamy(name, a, b):
     Parameters
     ==========
 
-    a : Real number, ``a > 0`` a shape
-    b : Real number, ``b > 0`` a shape
+    a : Real number, `a > 0`, a shape
+    b : Real number, `b > 0`, a shape
 
     Returns
     =======
@@ -2278,7 +2358,7 @@ def Laplace(name, mu, b):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Laplace_distribution
-    .. [2] http://mathworld.wolfram.com/LaplaceDistribution.html
+    .. [2] https://mathworld.wolfram.com/LaplaceDistribution.html
 
     """
 
@@ -2303,7 +2383,7 @@ class LevyDistribution(SingleContinuousDistribution):
     @staticmethod
     def check(mu, c):
         _value_check(c > 0, "c (scale parameter) must be positive")
-        _value_check(mu.is_real, "mu (location paramater) must be real")
+        _value_check(mu.is_real, "mu (location parameter) must be real")
 
     def pdf(self, x):
         mu, c = self.mu, self.c
@@ -2327,14 +2407,15 @@ def Levy(name, mu, c):
     The density of the Levy distribution is given by
 
     .. math::
-        f(x) := \sqrt(\frac{c}{2 \pi}) \frac{\exp -\frac{c}{2 (x - \mu)}}{(x - \mu)^{3/2}}
+        f(x) := \sqrt{\frac{c}{2 \pi}} \frac{\exp\left(-\frac{c}{2 (x - \mu)}\right)}
+                                            {(x - \mu)^{3/2}}
 
     Parameters
     ==========
 
     mu : Real number
         The location parameter.
-    c : Real number, ``c > 0``
+    c : Real number, `c > 0`
         A scale parameter.
 
     Returns
@@ -2363,7 +2444,7 @@ def Levy(name, mu, c):
     References
     ==========
     .. [1] https://en.wikipedia.org/wiki/L%C3%A9vy_distribution
-    .. [2] http://mathworld.wolfram.com/LevyDistribution.html
+    .. [2] https://mathworld.wolfram.com/LevyDistribution.html
     """
 
     return rv(name, LevyDistribution, (mu, c))
@@ -2491,7 +2572,7 @@ def Logistic(name, mu, s):
     ==========
 
     mu : Real number, the location (mean)
-    s : Real number, `s > 0` a scale
+    s : Real number, `s > 0`, a scale
 
     Returns
     =======
@@ -2520,7 +2601,7 @@ def Logistic(name, mu, s):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Logistic_distribution
-    .. [2] http://mathworld.wolfram.com/LogisticDistribution.html
+    .. [2] https://mathworld.wolfram.com/LogisticDistribution.html
 
     """
 
@@ -2574,7 +2655,7 @@ def LogLogistic(name, alpha, beta):
     ==========
 
     alpha : Real number, `\alpha > 0`, scale parameter and median of distribution
-    beta : Real number, `\beta > 0` a shape parameter
+    beta : Real number, `\beta > 0`, a shape parameter
 
     Returns
     =======
@@ -2659,7 +2740,7 @@ def LogitNormal(name, mu, s):
     ==========
 
     mu : Real number, the location (mean)
-    s : Real number, `s > 0` a scale
+    s : Real number, `s > 0`, a scale
 
     Returns
     =======
@@ -2797,7 +2878,7 @@ def LogNormal(name, mean, std):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Lognormal
-    .. [2] http://mathworld.wolfram.com/LogNormalDistribution.html
+    .. [2] https://mathworld.wolfram.com/LogNormalDistribution.html
 
     """
 
@@ -2836,9 +2917,9 @@ def Lomax(name, alpha, lamda):
     Parameters
     ==========
 
-    alpha : Real Number, `alpha > 0`
+    alpha : Real Number, `\alpha > 0`
         Shape parameter
-    lamda : Real Number, `lamda > 0`
+    lamda : Real Number, `\lambda > 0`
         Scale parameter
 
     Examples
@@ -2942,7 +3023,7 @@ def Maxwell(name, a):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Maxwell_distribution
-    .. [2] http://mathworld.wolfram.com/MaxwellDistribution.html
+    .. [2] https://mathworld.wolfram.com/MaxwellDistribution.html
 
     """
 
@@ -2987,7 +3068,8 @@ def Moyal(name, mu, sigma):
     The density of the Moyal distribution is given by
 
     .. math::
-        f(x) := \frac{\exp-\frac{1}{2}\exp-\frac{x-\mu}{\sigma}-\frac{x-\mu}{2\sigma}}{\sqrt{2\pi}\sigma}
+        f(x) := \frac{\exp\left(-\frac{1}{2}\left(\frac{x-\mu}{\sigma}+\exp\left(\frac{x-\mu}{\sigma}\right)\right)\right)}
+                     {\sqrt{2\pi}\sigma}
 
     with :math:`x \in \mathbb{R}`.
 
@@ -3022,7 +3104,7 @@ def Moyal(name, mu, sigma):
     ==========
 
     .. [1] https://reference.wolfram.com/language/ref/MoyalDistribution.html
-    .. [2] http://www.stat.rice.edu/~dobelman/textfiles/DistributionsHandbook.pdf
+    .. [2] https://www.stat.rice.edu/~dobelman/textfiles/DistributionsHandbook.pdf
 
     """
 
@@ -3070,7 +3152,7 @@ def Nakagami(name, mu, omega):
     Parameters
     ==========
 
-    mu : Real number, `\mu \geq \frac{1}{2}` a shape
+    mu : Real number, `\mu \geq \frac{1}{2}`, a shape
     omega : Real number, `\omega > 0`, the spread
 
     Returns
@@ -3172,7 +3254,7 @@ def Normal(name, mean, std):
 
     mu : Real number or a list representing the mean or the mean vector
     sigma : Real number or a positive definite square matrix,
-         :math:`\sigma^2 > 0` the variance
+         :math:`\sigma^2 > 0`, the variance
 
     Returns
     =======
@@ -3238,7 +3320,7 @@ def Normal(name, mean, std):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Normal_distribution
-    .. [2] http://mathworld.wolfram.com/NormalDistributionFunction.html
+    .. [2] https://mathworld.wolfram.com/NormalDistributionFunction.html
 
     """
 
@@ -3350,7 +3432,7 @@ def GaussianInverse(name, mean, shape):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Inverse_Gaussian_distribution
-    .. [2] http://mathworld.wolfram.com/InverseGaussianDistribution.html
+    .. [2] https://mathworld.wolfram.com/InverseGaussianDistribution.html
 
     """
 
@@ -3438,7 +3520,7 @@ def Pareto(name, xm, alpha):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Pareto_distribution
-    .. [2] http://mathworld.wolfram.com/ParetoDistribution.html
+    .. [2] https://mathworld.wolfram.com/ParetoDistribution.html
 
     """
 
@@ -3485,9 +3567,9 @@ def PowerFunction(name, alpha, a, b):
     Parameters
     ==========
 
-    alpha: Positive number, `0 < alpha` the shape paramater
-    a : Real number, :math:`-\infty < a` the left boundary
-    b : Real number, :math:`a < b < \infty` the right boundary
+    alpha : Positive number, `0 < \alpha`, the shape parameter
+    a : Real number, :math:`-\infty < a`, the left boundary
+    b : Real number, :math:`a < b < \infty`, the right boundary
 
     Returns
     =======
@@ -3527,7 +3609,7 @@ def PowerFunction(name, alpha, a, b):
     References
     ==========
 
-    .. [1] http://www.mathwave.com/help/easyfit/html/analyses/distributions/power_func.html
+    .. [1] https://web.archive.org/web/20200204081320/http://www.mathwave.com/help/easyfit/html/analyses/distributions/power_func.html
 
     """
     return rv(name, PowerFunctionDistribution, (alpha, a, b))
@@ -3789,7 +3871,7 @@ def Rayleigh(name, sigma):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Rayleigh_distribution
-    .. [2] http://mathworld.wolfram.com/RayleighDistribution.html
+    .. [2] https://mathworld.wolfram.com/RayleighDistribution.html
 
     """
 
@@ -3881,15 +3963,15 @@ def ShiftedGompertz(name, b, eta):
     The density of the Shifted Gompertz distribution is given by
 
     .. math::
-        f(x) := b e^{-b x} e^{-\eta \exp(-b x)} \left[1 + \eta(1 - e^(-bx)) \right]
+        f(x) := b e^{-b x} e^{-\eta \exp(-b x)} \left[1 + \eta(1 - e^{-bx}) \right]
 
-    with :math: 'x \in [0, \inf)'.
+    with :math:`x \in [0, \infty)`.
 
     Parameters
     ==========
 
-    b: Real number, 'b > 0' a scale
-    eta: Real number, 'eta > 0' a shape
+    b : Real number, `b > 0`, a scale
+    eta : Real number, `\eta > 0`, a shape
 
     Returns
     =======
@@ -3917,6 +3999,93 @@ def ShiftedGompertz(name, b, eta):
 
     """
     return rv(name, ShiftedGompertzDistribution, (b, eta))
+
+#-------------------------------------------------------------------------------
+# SkewNormal distribution -------------------------------------------------------
+
+
+class SkewNormalDistribution(SingleContinuousDistribution):
+    _argnames = ('xi', 'omega', 'alpha')
+
+    @staticmethod
+    def check(xi, omega, alpha):
+        _value_check(omega > 0, "Scale parameter must be positive")
+        _value_check(alpha.is_real != False, "Shape parameter alpha must be real.")
+
+    def pdf(self, x):
+        xi, omega, alpha = self.xi, self.omega, self.alpha
+        z = (x - xi)/omega
+        return exp(-z**2/2)*(1 + erf(alpha*z/sqrt(2)))/(sqrt(2*pi)*omega)
+
+    def _cdf(self, x):
+        xi, omega, alpha = self.xi, self.omega, self.alpha
+        z = (x - xi)/omega
+        return erf(sqrt(2)*z/2)/2 + S.Half - 2*owens_t(z, alpha)
+
+
+def SkewNormal(name, xi, omega, alpha):
+    r"""
+    Create a continuous random variable with a Skew Normal distribution.
+
+    Explanation
+    ===========
+
+    The density of the Skew Normal distribution is given by
+
+    .. math::
+        f(x) := \frac{2}{\omega} \phi\left(\frac{x-\xi}{\omega}\right)
+                \Phi\left(\alpha\frac{x-\xi}{\omega}\right)
+
+    where $\phi$ and $\Phi$ are the standard normal PDF and CDF,
+    respectively.
+
+    Parameters
+    ==========
+
+    xi : Real number, the location
+    omega : Real number, `\omega > 0`, a scale
+    alpha : Real number, the shape parameter
+
+    Returns
+    =======
+
+    RandomSymbol
+
+    Examples
+    ========
+
+    >>> from sympy.stats import SkewNormal, density, cdf
+    >>> from sympy import Symbol
+
+    >>> xi = Symbol("xi")
+    >>> omega = Symbol("omega", positive=True)
+    >>> alpha = Symbol("alpha")
+    >>> x = Symbol("x")
+
+    >>> X = SkewNormal("x", xi, omega, alpha)
+
+    >>> density(X)(x)
+    sqrt(2)*(erf(sqrt(2)*alpha*(x - xi)/(2*omega)) + 1)*exp(-(x - xi)**2/(2*omega**2))/(2*sqrt(pi)*omega)
+
+    >>> cdf(X)(x)
+    erf(sqrt(2)*(x - xi)/(2*omega))/2 - 2*owens_t((x - xi)/omega, alpha) + 1/2
+
+    Setting :math:`\alpha = 0` reduces to a Normal distribution:
+
+    >>> from sympy.stats import Normal
+    >>> density(SkewNormal("x", xi, omega, 0))(x) == density(Normal("x", xi, omega))(x)
+    True
+
+    References
+    ==========
+
+    .. [1] https://en.wikipedia.org/wiki/Skew_normal_distribution
+    .. [2] Azzalini, A. (1985). A class of distributions which includes
+           the normal ones. Scandinavian Journal of Statistics, 171-178.
+
+    """
+
+    return rv(name, SkewNormalDistribution, (xi, omega, alpha))
 
 #-------------------------------------------------------------------------------
 # StudentT distribution --------------------------------------------------------
@@ -4002,7 +4171,7 @@ def StudentT(name, nu):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Student_t-distribution
-    .. [2] http://mathworld.wolfram.com/Studentst-Distribution.html
+    .. [2] https://mathworld.wolfram.com/Studentst-Distribution.html
 
     """
 
@@ -4058,8 +4227,8 @@ def Trapezoidal(name, a, b, c, d):
     ==========
 
     a : Real number, :math:`a < d`
-    b : Real number, :math:`a <= b < c`
-    c : Real number, :math:`b < c <= d`
+    b : Real number, :math:`a \le b < c`
+    c : Real number, :math:`b < c \le d`
     d : Real number
 
     Returns
@@ -4201,7 +4370,7 @@ def Triangular(name, a, b, c):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Triangular_distribution
-    .. [2] http://mathworld.wolfram.com/TriangularDistribution.html
+    .. [2] https://mathworld.wolfram.com/TriangularDistribution.html
 
     """
 
@@ -4248,7 +4417,6 @@ class UniformDistribution(SingleContinuousDistribution):
                          (S.One, True))
 
     def expectation(self, expr, var, **kwargs):
-        from sympy.functions.elementary.miscellaneous import (Max, Min)
         kwargs['evaluate'] = True
         result = SingleContinuousDistribution.expectation(self, expr, var, **kwargs)
         result = result.subs({Max(self.left, self.right): self.right,
@@ -4276,8 +4444,8 @@ def Uniform(name, left, right):
     Parameters
     ==========
 
-    a : Real number, :math:`-\infty < a` the left boundary
-    b : Real number, :math:`a < b < \infty` the right boundary
+    a : Real number, :math:`-\infty < a`, the left boundary
+    b : Real number, :math:`a < b < \infty`, the right boundary
 
     Returns
     =======
@@ -4312,7 +4480,7 @@ def Uniform(name, left, right):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Uniform_distribution_%28continuous%29
-    .. [2] http://mathworld.wolfram.com/UniformDistribution.html
+    .. [2] https://mathworld.wolfram.com/UniformDistribution.html
 
     """
 
@@ -4373,7 +4541,7 @@ def UniformSum(name, n):
     Parameters
     ==========
 
-    n : A positive Integer, `n > 0`
+    n : A positive integer, `n > 0`
 
     Returns
     =======
@@ -4420,7 +4588,7 @@ def UniformSum(name, n):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Uniform_sum_distribution
-    .. [2] http://mathworld.wolfram.com/UniformSumDistribution.html
+    .. [2] https://mathworld.wolfram.com/UniformSumDistribution.html
 
     """
 
@@ -4494,7 +4662,7 @@ def VonMises(name, mu, k):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Von_Mises_distribution
-    .. [2] http://mathworld.wolfram.com/vonMisesDistribution.html
+    .. [2] https://mathworld.wolfram.com/vonMisesDistribution.html
 
     """
 
@@ -4538,8 +4706,8 @@ def Weibull(name, alpha, beta):
     Parameters
     ==========
 
-    lambda : Real number, :math:`\lambda > 0` a scale
-    k : Real number, ``k > 0`` a shape
+    lambda : Real number, $\lambda > 0$, a scale
+    k : Real number, $k > 0$, a shape
 
     Returns
     =======
@@ -4571,7 +4739,7 @@ def Weibull(name, alpha, beta):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Weibull_distribution
-    .. [2] http://mathworld.wolfram.com/WeibullDistribution.html
+    .. [2] https://mathworld.wolfram.com/WeibullDistribution.html
 
     """
 
@@ -4626,7 +4794,7 @@ def WignerSemicircle(name, R):
     Returns
     =======
 
-    A `RandomSymbol`.
+    A RandomSymbol.
 
     Examples
     ========
@@ -4649,7 +4817,7 @@ def WignerSemicircle(name, R):
     ==========
 
     .. [1] https://en.wikipedia.org/wiki/Wigner_semicircle_distribution
-    .. [2] http://mathworld.wolfram.com/WignersSemicircleLaw.html
+    .. [2] https://mathworld.wolfram.com/WignersSemicircleLaw.html
 
     """
 

@@ -1,10 +1,11 @@
+from __future__ import annotations
 from collections import deque
 from sympy.core.random import randint
 
 from sympy.external import import_module
 from sympy.core.basic import Basic
 from sympy.core.mul import Mul
-from sympy.core.numbers import Number
+from sympy.core.numbers import Number, equal_valued
 from sympy.core.power import Pow
 from sympy.core.singleton import S
 from sympy.physics.quantum.represent import represent
@@ -70,7 +71,7 @@ def is_scalar_sparse_matrix(circuit, nqubits, identity_only, eps=1e-11):
         # See parameter for default value.
 
         # Get the ndarray version of the dense matrix
-        dense_matrix = matrix.todense().getA()
+        dense_matrix = matrix.toarray()
         # Since complex values can't be compared, must split
         # the matrix into real and imaginary components
         # Find the real values in between -eps and eps
@@ -155,7 +156,7 @@ def is_scalar_nonsparse_matrix(circuit, nqubits, identity_only, eps=None):
                                  if not identity_only
                                  else matrix_trace)
 
-        is_identity = matrix[0] == 1.0 if identity_only else True
+        is_identity = equal_valued(matrix[0], 1) if identity_only else True
 
         has_correct_trace = adjusted_matrix_trace == pow(2, nqubits)
 

@@ -3,9 +3,13 @@
 # NOTE: keep tests sorted by (module, class name) key. If a class can't
 # be instantiated, add it here anyway with @SKIP("abstract class) (see
 # e.g. Function).
+from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
+
+import pytest
 
 from sympy.assumptions.ask import Q
 from sympy.core.basic import Basic
@@ -18,9 +22,9 @@ from sympy.functions.elementary.exponential import (exp, log)
 from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.functions.elementary.trigonometric import sin
 
-from sympy.testing.pytest import XFAIL, SKIP
+from sympy.testing.pytest import SKIP, warns_deprecated_sympy
 
-a, b, c, x, y, z = symbols('a,b,c,x,y,z')
+a, b, c, x, y, z, s = symbols('a,b,c,x,y,z,s')
 
 
 whitelist = [
@@ -28,6 +32,9 @@ whitelist = [
      "sympy.assumptions.relation.equality",    # tested by test_predicates()
 ]
 
+@pytest.mark.thread_unsafe(
+    reason="performs a package-wide import scan that cannot run concurrently"
+)
 def test_all_classes_are_tested():
     this = os.path.split(__file__)[0]
     path = os.path.join(this, os.pardir, os.pardir)
@@ -47,8 +54,7 @@ def test_all_classes_are_tested():
             if not file.endswith(".py"):
                 continue
 
-            with open(os.path.join(root, file), encoding='utf-8') as f:
-                text = f.read()
+            text = Path(os.path.join(root, file)).read_text(encoding='utf-8')
 
             submodule = module + '.' + file[:-3]
 
@@ -320,14 +326,32 @@ def test_sympy__codegen__ast__FunctionDefinition():
     assert _test_args(FunctionDefinition(real, 'pwer', [inp_x], [Assignment(x, x**2)]))
 
 
+def test_sympy__codegen__ast__Raise():
+    from sympy.codegen.ast import Raise
+    assert _test_args(Raise(x))
+
+
 def test_sympy__codegen__ast__Return():
     from sympy.codegen.ast import Return
     assert _test_args(Return(x))
 
 
+def test_sympy__codegen__ast__RuntimeError_():
+    from sympy.codegen.ast import RuntimeError_
+    assert _test_args(RuntimeError_('"message"'))
+
+
 def test_sympy__codegen__ast__FunctionCall():
     from sympy.codegen.ast import FunctionCall
     assert _test_args(FunctionCall('pwer', [x]))
+
+
+def test_sympy__codegen__ast__KeywordFunctionCall():
+    from sympy.codegen.ast import KeywordFunctionCall, String
+    from sympy.core.containers import Tuple
+    from sympy.core.symbol import Symbol
+    obj = KeywordFunctionCall(String('reshape'), Tuple(Symbol('x'), Symbol('y')), {'order': Symbol('z')})
+    assert _test_args(obj)
 
 
 def test_sympy__codegen__ast__Element():
@@ -482,14 +506,45 @@ def test_sympy__codegen__numpy_nodes__logaddexp2():
     assert _test_args(logaddexp2(x, y))
 
 
+def test_sympy__codegen__numpy_nodes__amin():
+    from sympy.codegen.numpy_nodes import amin
+    assert _test_args(amin(x))
+
+
+def test_sympy__codegen__numpy_nodes__amax():
+    from sympy.codegen.numpy_nodes import amax
+    assert _test_args(amax(x))
+
+
+def test_sympy__codegen__numpy_nodes__minimum():
+    from sympy.codegen.numpy_nodes import minimum
+    assert _test_args(minimum(x, y, z))
+
+
+def test_sympy__codegen__numpy_nodes__maximum():
+    from sympy.codegen.numpy_nodes import maximum
+    assert _test_args(maximum(x, y, z))
+
+
 def test_sympy__codegen__pynodes__List():
     from sympy.codegen.pynodes import List
     assert _test_args(List(1, 2, 3))
 
 
+def test_sympy__codegen__pynodes__NumExprEvaluate():
+    from sympy.codegen.pynodes import NumExprEvaluate
+    assert _test_args(NumExprEvaluate(x))
+
+
 def test_sympy__codegen__scipy_nodes__cosm1():
     from sympy.codegen.scipy_nodes import cosm1
     assert _test_args(cosm1(x))
+
+
+def test_sympy__codegen__scipy_nodes__powm1():
+    from sympy.codegen.scipy_nodes import powm1
+    assert _test_args(powm1(x, y))
+
 
 def test_sympy__codegen__abstract_nodes__List():
     from sympy.codegen.abstract_nodes import List
@@ -510,7 +565,7 @@ def test_sympy__combinatorics__permutations__AppliedPermutation():
     from sympy.combinatorics.permutations import Permutation
     from sympy.combinatorics.permutations import AppliedPermutation
     p = Permutation([0, 1, 2, 3])
-    assert _test_args(AppliedPermutation(p, 1))
+    assert _test_args(AppliedPermutation(p, x))
 
 def test_sympy__combinatorics__perm_groups__PermutationGroup():
     from sympy.combinatorics.permutations import Permutation
@@ -632,6 +687,11 @@ def test_sympy__core__function__Application():
 def test_sympy__core__function__AppliedUndef():
     from sympy.core.function import AppliedUndef
     assert _test_args(AppliedUndef(1, 2, 3))
+
+
+def test_sympy__core__function__DefinedFunction():
+    from sympy.core.function import DefinedFunction
+    assert _test_args(DefinedFunction(1, 2, 3))
 
 
 def test_sympy__core__function__Derivative():
@@ -828,11 +888,6 @@ def test_sympy__core__relational__Unequality():
     assert _test_args(Unequality(x, 2))
 
 
-@SKIP("deprecated class")
-def test_sympy__core__trace__Tr():
-    pass
-
-
 def test_sympy__sandbox__indexed_integrals__IndexedIntegral():
     from sympy.tensor import IndexedBase, Idx
     from sympy.sandbox.indexed_integrals import IndexedIntegral
@@ -935,7 +990,7 @@ def test_sympy__sets__sets__DisjointUnion():
 
 def test_sympy__physics__quantum__trace__Tr():
     from sympy.physics.quantum.trace import Tr
-    a, b = symbols('a b')
+    a, b = symbols('a b', commutative=False)
     assert _test_args(Tr(a + b))
 
 
@@ -1450,6 +1505,11 @@ def test_sympy__stats__crv_types__DagumDistribution():
     assert _test_args(DagumDistribution(1, 1, 1))
 
 
+def test_sympy__stats__crv_types__DavisDistribution():
+    from sympy.stats.crv_types import DavisDistribution
+    assert _test_args(DavisDistribution(1, 1, 1))
+
+
 def test_sympy__stats__crv_types__ExGaussianDistribution():
     from sympy.stats.crv_types import ExGaussianDistribution
     assert _test_args(ExGaussianDistribution(1, 1, 1))
@@ -1582,6 +1642,10 @@ def test_sympy__stats__crv_types__ReciprocalDistribution():
 def test_sympy__stats__crv_types__ShiftedGompertzDistribution():
     from sympy.stats.crv_types import ShiftedGompertzDistribution
     assert _test_args(ShiftedGompertzDistribution(1, 1))
+
+def test_sympy__stats__crv_types__SkewNormalDistribution():
+    from sympy.stats.crv_types import SkewNormalDistribution
+    assert _test_args(SkewNormalDistribution(0, 1, 1))
 
 def test_sympy__stats__crv_types__StudentTDistribution():
     from sympy.stats.crv_types import StudentTDistribution
@@ -1945,7 +2009,7 @@ def test_sympy__functions__combinatorial__factorials__binomial():
 
 def test_sympy__functions__combinatorial__factorials__subfactorial():
     from sympy.functions.combinatorial.factorials import subfactorial
-    assert _test_args(subfactorial(1))
+    assert _test_args(subfactorial(x))
 
 
 def test_sympy__functions__combinatorial__factorials__factorial():
@@ -1983,14 +2047,22 @@ def test_sympy__functions__combinatorial__numbers__euler():
     assert _test_args(euler(x))
 
 
+def test_sympy__functions__combinatorial__numbers__andre():
+    from sympy.functions.combinatorial.numbers import andre
+    assert _test_args(andre(x))
+
+
 def test_sympy__functions__combinatorial__numbers__carmichael():
     from sympy.functions.combinatorial.numbers import carmichael
     assert _test_args(carmichael(x))
 
 
-def test_sympy__functions__combinatorial__numbers__motzkin():
-    from sympy.functions.combinatorial.numbers import motzkin
-    assert _test_args(motzkin(5))
+def test_sympy__functions__combinatorial__numbers__divisor_sigma():
+    from sympy.functions.combinatorial.numbers import divisor_sigma
+    k = symbols('k', integer=True)
+    n = symbols('n', integer=True)
+    t = divisor_sigma(n, k)
+    assert _test_args(t)
 
 
 def test_sympy__functions__combinatorial__numbers__fibonacci():
@@ -1998,9 +2070,83 @@ def test_sympy__functions__combinatorial__numbers__fibonacci():
     assert _test_args(fibonacci(x))
 
 
+def test_sympy__functions__combinatorial__numbers__jacobi_symbol():
+    from sympy.functions.combinatorial.numbers import jacobi_symbol
+    assert _test_args(jacobi_symbol(2, 3))
+
+
+def test_sympy__functions__combinatorial__numbers__kronecker_symbol():
+    from sympy.functions.combinatorial.numbers import kronecker_symbol
+    assert _test_args(kronecker_symbol(2, 3))
+
+
+def test_sympy__functions__combinatorial__numbers__legendre_symbol():
+    from sympy.functions.combinatorial.numbers import legendre_symbol
+    assert _test_args(legendre_symbol(2, 3))
+
+
+def test_sympy__functions__combinatorial__numbers__mobius():
+    from sympy.functions.combinatorial.numbers import mobius
+    assert _test_args(mobius(2))
+
+
+def test_sympy__functions__combinatorial__numbers__motzkin():
+    from sympy.functions.combinatorial.numbers import motzkin
+    assert _test_args(motzkin(5))
+
+
+def test_sympy__functions__combinatorial__numbers__partition():
+    from sympy.core.symbol import Symbol
+    from sympy.functions.combinatorial.numbers import partition
+    assert _test_args(partition(Symbol('a', integer=True)))
+
+
+def test_sympy__functions__combinatorial__numbers__primenu():
+    from sympy.functions.combinatorial.numbers import primenu
+    n = symbols('n', integer=True)
+    t = primenu(n)
+    assert _test_args(t)
+
+
+def test_sympy__functions__combinatorial__numbers__primeomega():
+    from sympy.functions.combinatorial.numbers import primeomega
+    n = symbols('n', integer=True)
+    t = primeomega(n)
+    assert _test_args(t)
+
+
+def test_sympy__functions__combinatorial__numbers__primepi():
+    from sympy.functions.combinatorial.numbers import primepi
+    n = symbols('n')
+    t = primepi(n)
+    assert _test_args(t)
+
+
+def test_sympy__functions__combinatorial__numbers__reduced_totient():
+    from sympy.functions.combinatorial.numbers import reduced_totient
+    k = symbols('k', integer=True)
+    t = reduced_totient(k)
+    assert _test_args(t)
+
+
+def test_sympy__functions__combinatorial__numbers__totient():
+    from sympy.functions.combinatorial.numbers import totient
+    k = symbols('k', integer=True)
+    t = totient(k)
+    assert _test_args(t)
+
+
 def test_sympy__functions__combinatorial__numbers__tribonacci():
     from sympy.functions.combinatorial.numbers import tribonacci
     assert _test_args(tribonacci(x))
+
+
+def test_sympy__functions__combinatorial__numbers__udivisor_sigma():
+    from sympy.functions.combinatorial.numbers import udivisor_sigma
+    k = symbols('k', integer=True)
+    n = symbols('n', integer=True)
+    t = udivisor_sigma(n, k)
+    assert _test_args(t)
 
 
 def test_sympy__functions__combinatorial__numbers__harmonic():
@@ -2011,12 +2157,6 @@ def test_sympy__functions__combinatorial__numbers__harmonic():
 def test_sympy__functions__combinatorial__numbers__lucas():
     from sympy.functions.combinatorial.numbers import lucas
     assert _test_args(lucas(x))
-
-
-def test_sympy__functions__combinatorial__numbers__partition():
-    from sympy.core.symbol import Symbol
-    from sympy.functions.combinatorial.numbers import partition
-    assert _test_args(partition(Symbol('a', integer=True)))
 
 
 def test_sympy__functions__elementary__complexes__Abs():
@@ -2136,11 +2276,11 @@ def test_sympy__functions__elementary__hyperbolic__atanh():
 
 def test_sympy__functions__elementary__hyperbolic__asech():
     from sympy.functions.elementary.hyperbolic import asech
-    assert _test_args(asech(2))
+    assert _test_args(asech(x))
 
 def test_sympy__functions__elementary__hyperbolic__acsch():
     from sympy.functions.elementary.hyperbolic import acsch
-    assert _test_args(acsch(2))
+    assert _test_args(acsch(x))
 
 def test_sympy__functions__elementary__hyperbolic__cosh():
     from sympy.functions.elementary.hyperbolic import cosh
@@ -2172,10 +2312,9 @@ def test_sympy__functions__elementary__hyperbolic__tanh():
     assert _test_args(tanh(2))
 
 
-@SKIP("does this work at all?")
+@SKIP("abstract class")
 def test_sympy__functions__elementary__integers__RoundFunction():
-    from sympy.functions.elementary.integers import RoundFunction
-    assert _test_args(RoundFunction())
+    pass
 
 
 def test_sympy__functions__elementary__integers__ceiling():
@@ -2257,12 +2396,12 @@ def test_sympy__functions__elementary__trigonometric__asin():
 
 def test_sympy__functions__elementary__trigonometric__asec():
     from sympy.functions.elementary.trigonometric import asec
-    assert _test_args(asec(2))
+    assert _test_args(asec(x))
 
 
 def test_sympy__functions__elementary__trigonometric__acsc():
     from sympy.functions.elementary.trigonometric import acsc
-    assert _test_args(acsc(2))
+    assert _test_args(acsc(x))
 
 
 def test_sympy__functions__elementary__trigonometric__atan():
@@ -2425,6 +2564,12 @@ def test_sympy__functions__special__elliptic_integrals__elliptic_pi():
     assert _test_args(P(x, y, z))
 
 
+def test_sympy__functions__special__elliptic_functions__jtheta():
+    from sympy.functions.special.elliptic_functions import jtheta
+    assert _test_args(jtheta(1, x, y))
+    assert _test_args(jtheta(1, x, y, 2))
+
+
 def test_sympy__functions__special__delta_functions__DiracDelta():
     from sympy.functions.special.delta_functions import DiracDelta
     assert _test_args(DiracDelta(x, 1))
@@ -2500,7 +2645,7 @@ def test_sympy__functions__special__error_functions__li():
 
 def test_sympy__functions__special__error_functions__Li():
     from sympy.functions.special.error_functions import Li
-    assert _test_args(Li(2))
+    assert _test_args(Li(5))
 
 
 @SKIP("abstract class")
@@ -2533,6 +2678,11 @@ def test_sympy__functions__special__error_functions__expint():
     assert _test_args(expint(y, x))
 
 
+def test_sympy__functions__special__error_functions__owens_t():
+    from sympy.functions.special.error_functions import owens_t
+    assert _test_args(owens_t(2, 3))
+
+
 def test_sympy__functions__special__gamma_functions__gamma():
     from sympy.functions.special.gamma_functions import gamma
     assert _test_args(gamma(x))
@@ -2540,7 +2690,7 @@ def test_sympy__functions__special__gamma_functions__gamma():
 
 def test_sympy__functions__special__gamma_functions__loggamma():
     from sympy.functions.special.gamma_functions import loggamma
-    assert _test_args(loggamma(2))
+    assert _test_args(loggamma(x))
 
 
 def test_sympy__functions__special__gamma_functions__lowergamma():
@@ -2698,7 +2848,7 @@ def test_sympy__functions__special__polynomials__OrthogonalPolynomial():
 
 def test_sympy__functions__special__polynomials__jacobi():
     from sympy.functions.special.polynomials import jacobi
-    assert _test_args(jacobi(x, 2, 2, 2))
+    assert _test_args(jacobi(x, y, 2, 2))
 
 
 def test_sympy__functions__special__polynomials__gegenbauer():
@@ -2731,6 +2881,11 @@ def test_sympy__functions__special__polynomials__hermite():
     assert _test_args(hermite(x, 2))
 
 
+def test_sympy__functions__special__polynomials__hermite_prob():
+    from sympy.functions.special.polynomials import hermite_prob
+    assert _test_args(hermite_prob(x, 2))
+
+
 def test_sympy__functions__special__polynomials__legendre():
     from sympy.functions.special.polynomials import legendre
     assert _test_args(legendre(x, 2))
@@ -2758,7 +2913,7 @@ def test_sympy__functions__special__spherical_harmonics__Ynm():
 
 def test_sympy__functions__special__spherical_harmonics__Znm():
     from sympy.functions.special.spherical_harmonics import Znm
-    assert _test_args(Znm(1, 1, x, y))
+    assert _test_args(Znm(x, y, 1, 1))
 
 
 def test_sympy__functions__special__tensor_functions__LeviCivita():
@@ -2826,13 +2981,13 @@ def test_sympy__integrals__transforms__InverseMellinTransform():
     assert _test_args(InverseMellinTransform(2, x, y, 0, 1))
 
 
-def test_sympy__integrals__transforms__LaplaceTransform():
-    from sympy.integrals.transforms import LaplaceTransform
+def test_sympy__integrals__laplace__LaplaceTransform():
+    from sympy.integrals.laplace import LaplaceTransform
     assert _test_args(LaplaceTransform(2, x, y))
 
 
-def test_sympy__integrals__transforms__InverseLaplaceTransform():
-    from sympy.integrals.transforms import InverseLaplaceTransform
+def test_sympy__integrals__laplace__InverseLaplaceTransform():
+    from sympy.integrals.laplace import InverseLaplaceTransform
     assert _test_args(InverseLaplaceTransform(2, x, y, 0))
 
 
@@ -2890,10 +3045,6 @@ def test_sympy__integrals__transforms__HankelTransform():
     from sympy.integrals.transforms import HankelTransform
     assert _test_args(HankelTransform(2, x, y, 0))
 
-@XFAIL
-def test_sympy__liealgebras__cartan_type__CartanType_generator():
-    from sympy.liealgebras.cartan_type import CartanType_generator
-    assert _test_args(CartanType_generator("A2"))
 
 def test_sympy__liealgebras__cartan_type__Standard_Cartan():
     from sympy.liealgebras.cartan_type import Standard_Cartan
@@ -3010,8 +3161,8 @@ def test_sympy__logic__boolalg__Exclusive():
     assert _test_args(Exclusive(x, y, z))
 
 
-def test_sympy__matrices__matrices__DeferredVector():
-    from sympy.matrices.matrices import DeferredVector
+def test_sympy__matrices__matrixbase__DeferredVector():
+    from sympy.matrices.matrixbase import DeferredVector
     assert _test_args(DeferredVector("X"))
 
 
@@ -3129,6 +3280,11 @@ def test_sympy__matrices__expressions__special__OneMatrix():
 def test_sympy__matrices__expressions__special__ZeroMatrix():
     from sympy.matrices.expressions.special import ZeroMatrix
     assert _test_args(ZeroMatrix(3, 5))
+
+
+def test_sympy__matrices__expressions__special__MatrixUnit():
+    from sympy.matrices.expressions.special import MatrixUnit
+    assert _test_args(MatrixUnit(8, 9, 3, 5))
 
 
 def test_sympy__matrices__expressions__special__GenericZeroMatrix():
@@ -3335,6 +3491,53 @@ def test_sympy__physics__vector__frame__CoordinateSym():
     assert _test_args(CoordinateSym('R_x', ReferenceFrame('R'), 0))
 
 
+@SKIP("abstract class")
+def test_sympy__physics__biomechanics__curve__CharacteristicCurveFunction():
+    pass
+
+
+def test_sympy__physics__biomechanics__curve__TendonForceLengthDeGroote2016():
+    from sympy.physics.biomechanics import TendonForceLengthDeGroote2016
+    l_T_tilde, c0, c1, c2, c3 = symbols('l_T_tilde, c0, c1, c2, c3')
+    assert _test_args(TendonForceLengthDeGroote2016(l_T_tilde, c0, c1, c2, c3))
+
+
+def test_sympy__physics__biomechanics__curve__TendonForceLengthInverseDeGroote2016():
+    from sympy.physics.biomechanics import TendonForceLengthInverseDeGroote2016
+    fl_T, c0, c1, c2, c3 = symbols('fl_T, c0, c1, c2, c3')
+    assert _test_args(TendonForceLengthInverseDeGroote2016(fl_T, c0, c1, c2, c3))
+
+
+def test_sympy__physics__biomechanics__curve__FiberForceLengthPassiveDeGroote2016():
+    from sympy.physics.biomechanics import FiberForceLengthPassiveDeGroote2016
+    l_M_tilde, c0, c1 = symbols('l_M_tilde, c0, c1')
+    assert _test_args(FiberForceLengthPassiveDeGroote2016(l_M_tilde, c0, c1))
+
+
+def test_sympy__physics__biomechanics__curve__FiberForceLengthPassiveInverseDeGroote2016():
+    from sympy.physics.biomechanics import FiberForceLengthPassiveInverseDeGroote2016
+    fl_M_pas, c0, c1 = symbols('fl_M_pas, c0, c1')
+    assert _test_args(FiberForceLengthPassiveInverseDeGroote2016(fl_M_pas, c0, c1))
+
+
+def test_sympy__physics__biomechanics__curve__FiberForceLengthActiveDeGroote2016():
+    from sympy.physics.biomechanics import FiberForceLengthActiveDeGroote2016
+    l_M_tilde, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11 = symbols('l_M_tilde, c0:12')
+    assert _test_args(FiberForceLengthActiveDeGroote2016(l_M_tilde, c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11))
+
+
+def test_sympy__physics__biomechanics__curve__FiberForceVelocityDeGroote2016():
+    from sympy.physics.biomechanics import FiberForceVelocityDeGroote2016
+    v_M_tilde, c0, c1, c2, c3 = symbols('v_M_tilde, c0, c1, c2, c3')
+    assert _test_args(FiberForceVelocityDeGroote2016(v_M_tilde, c0, c1, c2, c3))
+
+
+def test_sympy__physics__biomechanics__curve__FiberForceVelocityInverseDeGroote2016():
+    from sympy.physics.biomechanics import FiberForceVelocityInverseDeGroote2016
+    fv_M, c0, c1, c2, c3 = symbols('fv_M, c0, c1, c2, c3')
+    assert _test_args(FiberForceVelocityInverseDeGroote2016(fv_M, c0, c1, c2, c3))
+
+
 def test_sympy__physics__paulialgebra__Pauli():
     from sympy.physics.paulialgebra import Pauli
     assert _test_args(Pauli(1))
@@ -3524,10 +3727,18 @@ def test_sympy__physics__quantum__gate__ZGate():
     assert _test_args(ZGate(0))
 
 
-@SKIP("TODO: sympy.physics")
+def test_sympy__physics__quantum__grover__OracleGateFunction():
+    from sympy.physics.quantum.grover import OracleGateFunction
+    @OracleGateFunction
+    def f(qubit):
+        return
+    assert _test_args(f)
+
 def test_sympy__physics__quantum__grover__OracleGate():
     from sympy.physics.quantum.grover import OracleGate
-    assert _test_args(OracleGate())
+    def f(qubit):
+        return
+    assert _test_args(OracleGate(1,f))
 
 
 def test_sympy__physics__quantum__grover__WGate():
@@ -3597,8 +3808,9 @@ def test_sympy__physics__quantum__operator__HermitianOperator():
 
 
 def test_sympy__physics__quantum__operator__IdentityOperator():
-    from sympy.physics.quantum.operator import IdentityOperator
-    assert _test_args(IdentityOperator(5))
+    with warns_deprecated_sympy():
+        from sympy.physics.quantum.operator import IdentityOperator
+        assert _test_args(IdentityOperator(5))
 
 
 def test_sympy__physics__quantum__operator__Operator():
@@ -3973,6 +4185,7 @@ def test_sympy__physics__quantum__state__Wavefunction():
 
 def test_sympy__physics__quantum__tensorproduct__TensorProduct():
     from sympy.physics.quantum.tensorproduct import TensorProduct
+    x, y = symbols("x y", commutative=False)
     assert _test_args(TensorProduct(x, y))
 
 
@@ -4056,6 +4269,7 @@ def test_sympy__physics__secondquant__BosonicOperator():
 
 def test_sympy__physics__secondquant__Commutator():
     from sympy.physics.secondquant import Commutator
+    x, y = symbols('x y', commutative=False)
     assert _test_args(Commutator(x, y))
 
 
@@ -4076,8 +4290,7 @@ def test_sympy__physics__secondquant__Creator():
 
 def test_sympy__physics__secondquant__Dagger():
     from sympy.physics.secondquant import Dagger
-    from sympy.core.numbers import I
-    assert _test_args(Dagger(2*I))
+    assert _test_args(Dagger(x))
 
 
 def test_sympy__physics__secondquant__FermionState():
@@ -4167,10 +4380,35 @@ def test_sympy__physics__control__lti__MIMOLinearTimeInvariant():
     # Direct instances of MIMOLinearTimeInvariant class are not allowed.
     pass
 
+@SKIP("abstract class")
+def test_sympy__physics__control__lti__TransferFunctionBase():
+    # Direct instances of TransferFunctionBase class are not allowed.
+    pass
+
 
 def test_sympy__physics__control__lti__TransferFunction():
     from sympy.physics.control.lti import TransferFunction
     assert _test_args(TransferFunction(2, 3, x))
+
+
+def test_sympy__physics__control__lti__DiscreteTransferFunction():
+    from sympy.physics.control.lti import DiscreteTransferFunction
+    assert _test_args(DiscreteTransferFunction(2, 3, x, 0.1))
+
+
+def _test_args_PIDController(obj):
+    from sympy.physics.control.lti import PIDController
+    if isinstance(obj, PIDController):
+        kp, ki, kd, tf = obj.kp, obj.ki, obj.kd, obj.tf
+        recreated_pid = PIDController(kp, ki, kd, tf, s)
+        return recreated_pid == obj
+    return False
+
+
+def test_sympy__physics__control__lti__PIDController():
+    from sympy.physics.control.lti import PIDController
+    kp, ki, kd, tf = 1, 0.1, 0.01, 0
+    assert _test_args_PIDController(PIDController(kp, ki, kd, tf, s))
 
 
 def test_sympy__physics__control__lti__Series():
@@ -4230,6 +4468,31 @@ def test_sympy__physics__control__lti__TransferFunctionMatrix():
     tf2 = TransferFunction(y - x, z + y, x)
     assert _test_args(TransferFunctionMatrix([[tf1, tf2]]))
 
+@SKIP("abstract class")
+def test_sympy__physics__control__lti__StateSpaceBase():
+    # Direct instances of StateSpaceBase class are not allowed.
+    pass
+
+
+def test_sympy__physics__control__lti__StateSpace():
+    from sympy.matrices.dense import Matrix
+    from sympy.physics.control import StateSpace
+    A = Matrix([[-5, -1], [3, -1]])
+    B = Matrix([2, 5])
+    C = Matrix([[1, 2]])
+    D = Matrix([0])
+    assert _test_args(StateSpace(A, B, C, D))
+
+
+def test_sympy__physics__control__lti__DiscreteStateSpace():
+    from sympy.matrices.dense import Matrix
+    from sympy.physics.control import DiscreteStateSpace
+    A = Matrix([[-5, -1], [3, -1]])
+    B = Matrix([2, 5])
+    C = Matrix([[1, 2]])
+    D = Matrix([0])
+    assert _test_args(DiscreteStateSpace(A, B, C, D, 0.1))
+
 
 def test_sympy__physics__units__dimensions__Dimension():
     from sympy.physics.units.dimensions import Dimension
@@ -4245,6 +4508,11 @@ def test_sympy__physics__units__dimensions__DimensionSystem():
 def test_sympy__physics__units__quantities__Quantity():
     from sympy.physics.units.quantities import Quantity
     assert _test_args(Quantity("dam"))
+
+
+def test_sympy__physics__units__quantities__PhysicalConstant():
+    from sympy.physics.units.quantities import PhysicalConstant
+    assert _test_args(PhysicalConstant("foo"))
 
 
 def test_sympy__physics__units__prefixes__Prefix():
@@ -4303,7 +4571,7 @@ def test_sympy__series__sequences__SeqBase():
 
 
 def test_sympy__series__sequences__EmptySequence():
-    # Need to imort the instance from series not the class from
+    # Need to import the instance from series not the class from
     # series.sequence
     from sympy.series import EmptySequence
     assert _test_args(EmptySequence)
@@ -4479,7 +4747,9 @@ def test_sympy__tensor__functions__TensorProduct():
 def test_sympy__tensor__indexed__Idx():
     from sympy.tensor.indexed import Idx
     assert _test_args(Idx('test'))
-    assert _test_args(Idx(1, (0, 10)))
+    assert _test_args(Idx('test', (0, 10)))
+    assert _test_args(Idx('test', 2))
+    assert _test_args(Idx('test', x))
 
 
 def test_sympy__tensor__indexed__Indexed():
@@ -4561,6 +4831,21 @@ def test_sympy__tensor__tensor__TensorElement():
     telem = TensorElement(A(x, y), {x: 1})
     assert _test_args(telem)
 
+def test_sympy__tensor__tensor__WildTensor():
+    from sympy.tensor.tensor import TensorIndexType, WildTensorHead, TensorIndex
+    Lorentz = TensorIndexType('Lorentz', dummy_name='L')
+    a = TensorIndex('a', Lorentz)
+    p = WildTensorHead('p')
+    assert _test_args(p(a))
+
+def test_sympy__tensor__tensor__WildTensorHead():
+    from sympy.tensor.tensor import WildTensorHead
+    assert _test_args(WildTensorHead('p'))
+
+def test_sympy__tensor__tensor__WildTensorIndex():
+    from sympy.tensor.tensor import TensorIndexType, WildTensorIndex
+    Lorentz = TensorIndexType('Lorentz', dummy_name='L')
+    assert _test_args(WildTensorIndex('i', Lorentz))
 
 def test_sympy__tensor__toperators__PartialDerivative():
     from sympy.tensor.tensor import TensorIndexType, tensor_indices, TensorHead
@@ -4776,7 +5061,6 @@ def test_sympy__diffgeom__diffgeom__LieDerivative():
     assert _test_args(LieDerivative(v, d))
 
 
-@XFAIL
 def test_sympy__diffgeom__diffgeom__BaseCovarDerivativeOp():
     from sympy.diffgeom import Manifold, Patch, CoordSystem, BaseCovarDerivativeOp
     cs = CoordSystem('name', Patch('name', Manifold('name', 3)), [a, b, c])
@@ -4800,10 +5084,9 @@ def test_sympy__categories__baseclasses__Object():
     assert _test_args(Object("A"))
 
 
-@XFAIL
+@SKIP("abstract class")
 def test_sympy__categories__baseclasses__Morphism():
-    from sympy.categories import Object, Morphism
-    assert _test_args(Morphism(Object("A"), Object("B")))
+    pass
 
 
 def test_sympy__categories__baseclasses__IdentityMorphism():
@@ -4848,62 +5131,6 @@ def test_sympy__categories__baseclasses__Category():
     assert _test_args(K)
 
 
-def test_sympy__ntheory__factor___totient():
-    from sympy.ntheory.factor_ import totient
-    k = symbols('k', integer=True)
-    t = totient(k)
-    assert _test_args(t)
-
-
-def test_sympy__ntheory__factor___reduced_totient():
-    from sympy.ntheory.factor_ import reduced_totient
-    k = symbols('k', integer=True)
-    t = reduced_totient(k)
-    assert _test_args(t)
-
-
-def test_sympy__ntheory__factor___divisor_sigma():
-    from sympy.ntheory.factor_ import divisor_sigma
-    k = symbols('k', integer=True)
-    n = symbols('n', integer=True)
-    t = divisor_sigma(n, k)
-    assert _test_args(t)
-
-
-def test_sympy__ntheory__factor___udivisor_sigma():
-    from sympy.ntheory.factor_ import udivisor_sigma
-    k = symbols('k', integer=True)
-    n = symbols('n', integer=True)
-    t = udivisor_sigma(n, k)
-    assert _test_args(t)
-
-
-def test_sympy__ntheory__factor___primenu():
-    from sympy.ntheory.factor_ import primenu
-    n = symbols('n', integer=True)
-    t = primenu(n)
-    assert _test_args(t)
-
-
-def test_sympy__ntheory__factor___primeomega():
-    from sympy.ntheory.factor_ import primeomega
-    n = symbols('n', integer=True)
-    t = primeomega(n)
-    assert _test_args(t)
-
-
-def test_sympy__ntheory__residue_ntheory__mobius():
-    from sympy.ntheory import mobius
-    assert _test_args(mobius(2))
-
-
-def test_sympy__ntheory__generate__primepi():
-    from sympy.ntheory import primepi
-    n = symbols('n')
-    t = primepi(n)
-    assert _test_args(t)
-
-
 def test_sympy__physics__optics__waves__TWave():
     from sympy.physics.optics import TWave
     A, f, phi = symbols('A, f, phi')
@@ -4912,12 +5139,22 @@ def test_sympy__physics__optics__waves__TWave():
 
 def test_sympy__physics__optics__gaussopt__BeamParameter():
     from sympy.physics.optics import BeamParameter
-    assert _test_args(BeamParameter(530e-9, 1, w=1e-3))
+    assert _test_args(BeamParameter(530e-9, 1, w=1e-3, n=1))
 
 
 def test_sympy__physics__optics__medium__Medium():
     from sympy.physics.optics import Medium
     assert _test_args(Medium('m'))
+
+
+def test_sympy__physics__optics__medium__MediumN():
+    from sympy.physics.optics.medium import Medium
+    assert _test_args(Medium('m', n=2))
+
+
+def test_sympy__physics__optics__medium__MediumPP():
+    from sympy.physics.optics.medium import Medium
+    assert _test_args(Medium('m', permittivity=2, permeability=2))
 
 
 def test_sympy__tensor__array__expressions__array_expressions__ArrayContraction():
@@ -4958,6 +5195,18 @@ def test_sympy__tensor__array__expressions__array_expressions__ArrayElementwiseA
     from sympy.tensor.array.expressions.array_expressions import ArraySymbol, ArrayElementwiseApplyFunc
     A = ArraySymbol("A", (4,))
     assert _test_args(ArrayElementwiseApplyFunc(exp, A))
+
+
+def test_sympy__tensor__array__expressions__array_expressions__Reshape():
+    from sympy.tensor.array.expressions.array_expressions import ArraySymbol, Reshape
+    A = ArraySymbol("A", (4,))
+    assert _test_args(Reshape(A, (2, 2)))
+
+
+def test_sympy__tensor__array__expressions__array_expressions__ArraySum():
+    from sympy.tensor.array.expressions.array_expressions import ArraySum, ArraySymbol
+    A = ArraySymbol("A", (3, 3))
+    assert _test_args(ArraySum(A*sin(a), (a, 1, b)))
 
 
 def test_sympy__codegen__ast__Assignment():
@@ -5006,6 +5255,16 @@ def test_sympy__codegen__cfunctions__Cbrt():
 def test_sympy__codegen__cfunctions__hypot():
     from sympy.codegen.cfunctions import hypot
     assert _test_args(hypot(x, y))
+
+
+def test_sympy__codegen__cfunctions__isnan():
+    from sympy.codegen.cfunctions import isnan
+    assert _test_args(isnan(x))
+
+
+def test_sympy__codegen__cfunctions__isinf():
+    from sympy.codegen.cfunctions import isinf
+    assert _test_args(isinf(x))
 
 
 def test_sympy__codegen__fnodes__FFunction():
@@ -5064,6 +5323,22 @@ def test_sympy__codegen__matrix_nodes__MatrixSolve():
     A = MatrixSymbol('A', 3, 3)
     v = MatrixSymbol('x', 3, 1)
     assert _test_args(MatrixSolve(A, v))
+
+
+def test_sympy__printing__rust__TypeCast():
+    from sympy.printing.rust import TypeCast
+    from sympy.codegen.ast import real
+    assert _test_args(TypeCast(x, real))
+
+
+def test_sympy__printing__rust__float_floor():
+    from sympy.printing.rust import float_floor
+    assert _test_args(float_floor(x))
+
+
+def test_sympy__printing__rust__float_ceiling():
+    from sympy.printing.rust import float_ceiling
+    assert _test_args(float_ceiling(x))
 
 
 def test_sympy__vector__coordsysrect__CoordSys3D():
@@ -5288,62 +5563,9 @@ def test_sympy__physics__wigner__Wigner3j():
     assert _test_args(Wigner3j(0, 0, 0, 0, 0, 0))
 
 
-def test_sympy__integrals__rubi__symbol__matchpyWC():
-    from sympy.integrals.rubi.symbol import matchpyWC
-    assert _test_args(matchpyWC(1, True, 'a'))
-
-
-def test_sympy__integrals__rubi__utility_function__rubi_unevaluated_expr():
-    from sympy.integrals.rubi.utility_function import rubi_unevaluated_expr
-    a = symbols('a')
-    assert _test_args(rubi_unevaluated_expr(a))
-
-
-def test_sympy__integrals__rubi__utility_function__rubi_exp():
-    from sympy.integrals.rubi.utility_function import rubi_exp
-    assert _test_args(rubi_exp(5))
-
-
-def test_sympy__integrals__rubi__utility_function__rubi_log():
-    from sympy.integrals.rubi.utility_function import rubi_log
-    assert _test_args(rubi_log(5))
-
-
-def test_sympy__integrals__rubi__utility_function__Int():
-    from sympy.integrals.rubi.utility_function import Int
-    assert _test_args(Int(5, x))
-
-
-def test_sympy__integrals__rubi__utility_function__Util_Coefficient():
-    from sympy.integrals.rubi.utility_function import Util_Coefficient
-    a, x = symbols('a x')
-    assert _test_args(Util_Coefficient(a, x))
-
-
-def test_sympy__integrals__rubi__utility_function__Gamma():
-    from sympy.integrals.rubi.utility_function import Gamma
-    assert _test_args(Gamma(5))
-
-
-def test_sympy__integrals__rubi__utility_function__Util_Part():
-    from sympy.integrals.rubi.utility_function import Util_Part
-    a, b = symbols('a b')
-    assert _test_args(Util_Part(a + b, 0))
-
-
-def test_sympy__integrals__rubi__utility_function__PolyGamma():
-    from sympy.integrals.rubi.utility_function import PolyGamma
-    assert _test_args(PolyGamma(1, 1))
-
-
-def test_sympy__integrals__rubi__utility_function__ProductLog():
-    from sympy.integrals.rubi.utility_function import ProductLog
-    assert _test_args(ProductLog(1))
-
-
 def test_sympy__combinatorics__schur_number__SchurNumber():
     from sympy.combinatorics.schur_number import SchurNumber
-    assert _test_args(SchurNumber(1))
+    assert _test_args(SchurNumber(x))
 
 
 def test_sympy__combinatorics__perm_groups__SymmetricPermutationGroup():

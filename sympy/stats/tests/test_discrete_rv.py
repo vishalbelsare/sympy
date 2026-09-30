@@ -1,7 +1,8 @@
+from __future__ import annotations
 from sympy.concrete.summations import Sum
 from sympy.core.numbers import (I, Rational, oo, pi)
 from sympy.core.singleton import S
-from sympy.core.symbol import (Dummy, Symbol)
+from sympy.core.symbol import Symbol
 from sympy.functions.elementary.complexes import (im, re)
 from sympy.functions.elementary.exponential import log
 from sympy.functions.elementary.integers import floor
@@ -24,8 +25,9 @@ from sympy.stats.drv_types import (PoissonDistribution, GeometricDistribution,
                                    FlorySchulz, Poisson, Geometric, Hermite, Logarithmic,
                                     NegativeBinomial, Skellam, YuleSimon, Zeta,
                                     DiscreteRV)
-from sympy.testing.pytest import slow, nocache_fail, raises, ignore_warnings
+from sympy.testing.pytest import slow, nocache_fail, raises, skip
 from sympy.stats.symbolic_probability import Expectation
+from sympy.functions.combinatorial.factorials import FallingFactorial
 
 x = Symbol('x')
 
@@ -43,13 +45,28 @@ def test_Poisson():
     l = 3
     x = Poisson('x', l)
     assert E(x) == l
+    assert E(2*x) == 2*l
     assert variance(x) == l
     assert density(x) == PoissonDistribution(l)
-    with ignore_warnings(UserWarning): ### TODO: Restore tests once warnings are removed
-        assert isinstance(E(x, evaluate=False), Expectation)
-        assert isinstance(E(2*x, evaluate=False), Expectation)
+    assert isinstance(E(x, evaluate=False), Expectation)
+    assert isinstance(E(2*x, evaluate=False), Expectation)
     # issue 8248
     assert x.pspace.compute_expectation(1) == 1
+    # issue 27344
+    try:
+        import numpy as np
+    except ImportError:
+        skip("numpy not installed")
+    y = Poisson('y', np.float64(4.72544290380919e-11))
+    assert E(y) == 4.72544290380919e-11
+    y = Poisson('y', np.float64(4.725442903809197e-11))
+    assert E(y) == 4.725442903809197e-11
+    l2 = 5
+    z = Poisson('z', l2)
+    assert E(z) == l2
+    assert E(FallingFactorial(z, 3)) == l2**3
+    assert E(z**2) == l2 + l2**2
+
 
 def test_FlorySchulz():
     a = Symbol("a")
@@ -107,8 +124,7 @@ def test_Logarithmic():
     assert E(x) == -p / ((1 - p) * log(1 - p))
     assert variance(x) == -1/log(2)**2 + 2/log(2)
     assert E(2*x**2 + 3*x + 4) == 4 + 7 / log(2)
-    with ignore_warnings(UserWarning): ### TODO: Restore tests once warnings are removed
-        assert isinstance(E(x, evaluate=False), Expectation)
+    assert isinstance(E(x, evaluate=False), Expectation)
 
 
 @nocache_fail
@@ -116,12 +132,11 @@ def test_negative_binomial():
     r = 5
     p = S.One / 3
     x = NegativeBinomial('x', r, p)
-    assert E(x) == p*r / (1-p)
+    assert E(x) == r * (1 - p) / p
     # This hangs when run with the cache disabled:
-    assert variance(x) == p*r / (1-p)**2
-    assert E(x**5 + 2*x + 3) == Rational(9207, 4)
-    with ignore_warnings(UserWarning): ### TODO: Restore tests once warnings are removed
-        assert isinstance(E(x, evaluate=False), Expectation)
+    assert variance(x) == r * (1 - p) / p**2
+    assert E(x**5 + 2*x + 3) == E(x**5) + 2*E(x) + 3 == Rational(796473, 1)
+    assert isinstance(E(x, evaluate=False), Expectation)
 
 
 def test_skellam():
@@ -148,8 +163,7 @@ def test_yule_simon():
     x = YuleSimon('x', rho)
     assert simplify(E(x)) == rho / (rho - 1)
     assert simplify(variance(x)) == rho**2 / ((rho - 1)**2 * (rho - 2))
-    with ignore_warnings(UserWarning): ### TODO: Restore tests once warnings are removed
-        assert isinstance(E(x, evaluate=False), Expectation)
+    assert isinstance(E(x, evaluate=False), Expectation)
     # To test the cdf function
     assert cdf(x)(x) == Piecewise((-beta(floor(x), 4)*floor(x) + 1, x >= 1), (0, True))
 
@@ -215,7 +229,7 @@ def test_precomputed_characteristic_functions():
         # second function is the Fourier transform of the density function
         f = lambdify([x, t], pdf(x)*exp(I*x*t), 'mpmath')
         cf2 = lambda t: mpmath.nsum(lambda x: f(x, t), [
-            support_lower_limit, support_upper_limit], maxdegree=10)
+            support_lower_limit, support_upper_limit])
 
         # compare the two functions at various points
         for test_point in [2, 5, 8, 11]:
@@ -244,7 +258,7 @@ def test_moment_generating_functions():
 
     negative_binomial_mgf = moment_generating_function(
         NegativeBinomial('n', 5, Rational(1, 3)))(t)
-    assert negative_binomial_mgf.diff(t).subs(t, 0) == Rational(5, 2)
+    assert negative_binomial_mgf.diff(t).subs(t, 0) == Rational(10, 1)
 
     poisson_mgf = moment_generating_function(Poisson('p', 5))(t)
     assert poisson_mgf.diff(t).subs(t, 0) == 5
@@ -291,17 +305,9 @@ def test_conditional():
 def test_product_spaces():
     X1 = Geometric('X1', S.Half)
     X2 = Geometric('X2', Rational(1, 3))
-    #assert str(P(X1 + X2 < 3, evaluate=False)) == """Sum(Piecewise((2**(X2 - n - 2)*(2/3)**(X2 - 1)/6, """\
-    #    + """(-X2 + n + 3 >= 1) & (-X2 + n + 3 < oo)), (0, True)), (X2, 1, oo), (n, -oo, -1))"""
-    n = Dummy('n')
-    with ignore_warnings(UserWarning): ### TODO: Restore tests once warnings are removed
-        assert P(X1 + X2 < 3, evaluate=False).rewrite(Sum).dummy_eq(Sum(Piecewise((2**(-n)/4,
-         n + 2 >= 1), (0, True)), (n, -oo, -1))/3)
-    #assert str(P(X1 + X2 > 3)) == """Sum(Piecewise((2**(X2 - n - 2)*(2/3)**(X2 - 1)/6, """ +\
-    #    """(-X2 + n + 3 >= 1) & (-X2 + n + 3 < oo)), (0, True)), (X2, 1, oo), (n, 1, oo))"""
-    assert P(X1 + X2 > 3).dummy_eq(Sum(Piecewise((2**(X2 - n - 2)*(Rational(2, 3))**(X2 - 1)/6,
-                                                 -X2 + n + 3 >= 1), (0, True)),
-                                       (X2, 1, oo), (n, 1, oo)))
-#    assert str(P(Eq(X1 + X2, 3))) == """Sum(Piecewise((2**(X2 - 2)*(2/3)**(X2 - 1)/6, """ +\
-#        """X2 <= 2), (0, True)), (X2, 1, oo))"""
+    assert str(P(X1 + X2 < 3).rewrite(Sum)) == (
+        "Sum(Piecewise((1/(4*2**n), n >= -1), (0, True)), (n, -oo, -1))/3")
+    assert str(P(X1 + X2 > 3).rewrite(Sum)) == (
+        'Sum(Piecewise((2**(X2 - n - 2)*(2/3)**(X2 - 1)/6, '
+        'X2 - n <= 2), (0, True)), (X2, 1, oo), (n, 1, oo))')
     assert P(Eq(X1 + X2, 3)) == Rational(1, 12)

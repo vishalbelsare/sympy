@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.numbers import Rational
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
@@ -42,7 +43,7 @@ class ImplicitRegion(Basic):
     >>> r.variables
     (x, y, z)
     >>> r.singular_points()
-    {(0, 0, 0)}
+    EmptySet
     >>> r.regular_point()
     (-10, -10, 200)
 
@@ -98,7 +99,7 @@ class ImplicitRegion(Basic):
         ==========
 
         - Erik Hillgarter, "Rational Points on Conics", Diploma Thesis, RISC-Linz,
-          J. Kepler Universitat Linz, 1996. Availaible:
+          J. Kepler Universitat Linz, 1996. Available:
           https://www3.risc.jku.at/publications/download/risc_1355/Rational%20Points%20on%20Conics.pdf
 
         """
@@ -225,7 +226,7 @@ class ImplicitRegion(Basic):
             flag = False
             for sol in solutions:
                 syms = Tuple(*sol).free_symbols
-                rep = {s: 3 for s in syms}
+                rep = dict.fromkeys(syms, 3)
                 sol_z = sol[2]
 
                 if sol_z == 0:
@@ -333,7 +334,7 @@ class ImplicitRegion(Basic):
 
         if len(modified_eq.args) != 0:
             terms = modified_eq.args
-            m = min([total_degree(term) for term in terms])
+            m = min(total_degree(term) for term in terms)
         else:
             terms = modified_eq
             m = total_degree(terms)
@@ -342,7 +343,7 @@ class ImplicitRegion(Basic):
 
     def rational_parametrization(self, parameters=('t', 's'), reg_point=None):
         """
-        Returns the rational parametrization of implict region.
+        Returns the rational parametrization of implicit region.
 
         Examples
         ========
@@ -418,10 +419,10 @@ class ImplicitRegion(Basic):
             singular_points = self.singular_points()
             for spoint in singular_points:
                 syms = Tuple(*spoint).free_symbols
-                rep = {s: 2 for s in syms}
+                rep = dict.fromkeys(syms, 2)
 
                 if len(syms) != 0:
-                   spoint = tuple(s.subs(rep) for s in spoint)
+                    spoint = tuple(s.subs(rep) for s in spoint)
 
                 if self.multiplicity(spoint) == degree - 1:
                     point = spoint

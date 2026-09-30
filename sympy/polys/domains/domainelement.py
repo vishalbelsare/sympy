@@ -1,4 +1,5 @@
 """Trait for implementing domain elements. """
+from __future__ import annotations
 
 
 from sympy.utilities import public
@@ -11,6 +12,8 @@ class DomainElement:
     Mix in this trait into a class whose instances should be recognized as
     elements of a domain. Method ``parent()`` gives that domain.
     """
+
+    __slots__ = ()
 
     def parent(self):
         """Get the domain associated with ``self``

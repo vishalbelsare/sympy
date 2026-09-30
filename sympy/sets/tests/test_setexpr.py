@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.sets.setexpr import SetExpr
 from sympy.sets import Interval, FiniteSet, Intersection, ImageSet, Union
 
@@ -78,7 +79,7 @@ def test_same_setexprs_are_not_identical():
     b = SetExpr(FiniteSet(0, 1))
     assert (a + b).set == FiniteSet(0, 1, 2)
 
-    # Cannont detect the set being the same:
+    # Cannot detect the set being the same:
     # assert (a + a).set == FiniteSet(0, 2)
 
 
@@ -188,9 +189,6 @@ def test_Interval_arithmetic():
     assert n23cc - i12cc == SetExpr(Interval(-4, 2))
     assert n23cc*i12cc == SetExpr(Interval(-4, 6))
     assert n23cc/i12cc == SetExpr(Interval(-2, 3))
-
-
-
 
 
 def test_SetExpr_Intersection():

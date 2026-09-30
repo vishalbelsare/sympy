@@ -1,18 +1,24 @@
 """Implementation of :class:`RationalField` class. """
+from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
 from sympy.external.gmpy import MPQ
 
-from sympy.polys.domains.groundtypes import SymPyRational
+from sympy.polys.domains.groundtypes import SymPyRational, is_square, sqrtrem
 
 from sympy.polys.domains.characteristiczero import CharacteristicZero
 from sympy.polys.domains.field import Field
 from sympy.polys.domains.simpledomain import SimpleDomain
+from sympy.polys.domains.conjugatedomain import ConjugateDomain
 from sympy.polys.polyerrors import CoercionFailed
 from sympy.utilities import public
 
+if TYPE_CHECKING:
+    from sympy.polys.domains.cyclotomicfield import CyclotomicField
+
 @public
-class RationalField(Field, CharacteristicZero, SimpleDomain):
+class RationalField(Field[MPQ], CharacteristicZero, SimpleDomain, ConjugateDomain):
     r"""Abstract base class for the domain :ref:`QQ`.
 
     The :py:class:`RationalField` class represents the field of rational
@@ -45,6 +51,17 @@ class RationalField(Field, CharacteristicZero, SimpleDomain):
     def __init__(self):
         pass
 
+    def __eq__(self, other):
+        """Returns ``True`` if two domains are equivalent. """
+        if isinstance(other, RationalField):
+            return True
+        else:
+            return NotImplemented
+
+    def __hash__(self):
+        """Returns hash code of ``self``. """
+        return hash('QQ')
+
     def get_ring(self):
         """Returns ring associated with ``self``. """
         from sympy.polys.domains import ZZ
@@ -64,15 +81,19 @@ class RationalField(Field, CharacteristicZero, SimpleDomain):
         else:
             raise CoercionFailed("expected `Rational` object, got %s" % a)
 
-    def algebraic_field(self, *extension):
+    def algebraic_field(self, *extension, alias=None):
         r"""Returns an algebraic field, i.e. `\mathbb{Q}(\alpha, \ldots)`.
 
         Parameters
         ==========
 
-        *extension: One or more Expr
+        *extension : One or more :py:class:`~.Expr`
             Generators of the extension. These should be expressions that are
             algebraic over `\mathbb{Q}`.
+
+        alias : str, :py:class:`~.Symbol`, None, optional (default=None)
+            If provided, this will be used as the alias symbol for the
+            primitive element of the returned :py:class:`~.AlgebraicField`.
 
         Returns
         =======
@@ -88,7 +109,17 @@ class RationalField(Field, CharacteristicZero, SimpleDomain):
         QQ<sqrt(2)>
         """
         from sympy.polys.domains import AlgebraicField
-        return AlgebraicField(self, *extension)
+        return AlgebraicField(self, *extension, alias=alias)
+
+    def cyclotomic_field(
+        self,
+        n: int,
+        ss: bool = True,
+        alias: str = "zeta",
+        root_index: int = -1,
+    ) -> CyclotomicField:
+        from sympy.polys.domains.cyclotomicfield import CyclotomicField
+        return CyclotomicField(n, ss=ss, alias=alias, root_index=root_index)
 
     def from_AlgebraicField(K1, a, K0):
         """Convert a :py:class:`~.ANP` object to :ref:`QQ`.
@@ -154,6 +185,37 @@ class RationalField(Field, CharacteristicZero, SimpleDomain):
     def denom(self, a):
         """Returns denominator of ``a``. """
         return a.denominator
+
+    def is_square(self, a):
+        """Return ``True`` if ``a`` is a square.
+
+        Explanation
+        ===========
+        A rational number is a square if and only if there exists
+        a rational number ``b`` such that ``b * b == a``.
+        """
+        return is_square(a.numerator) and is_square(a.denominator)
+
+    def exsqrt(self, a):
+        """Non-negative square root of ``a`` if ``a`` is a square.
+
+        See also
+        ========
+        is_square
+        """
+        if a.numerator < 0:  # denominator is always positive
+            return None
+        p_sqrt, p_rem = sqrtrem(a.numerator)
+        if p_rem != 0:
+            return None
+        q_sqrt, q_rem = sqrtrem(a.denominator)
+        if q_rem != 0:
+            return None
+        return MPQ(p_sqrt, q_sqrt)
+
+    def conjugate(self, a):
+        """Returns the complex conjugate of ``a``."""
+        return a
 
 
 QQ = RationalField()

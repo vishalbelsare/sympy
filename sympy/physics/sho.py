@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core import S, pi, Rational
 from sympy.functions import assoc_laguerre, sqrt, exp, factorial, factorial2
 
@@ -10,16 +11,16 @@ def R_nl(n, l, nu, r):
     Parameters
     ==========
 
-    ``n`` :
+    n :
         The "nodal" quantum number.  Corresponds to the number of nodes in
         the wavefunction.  ``n >= 0``
-    ``l`` :
+    l :
         The quantum number for orbital angular momentum.
-    ``nu`` :
+    nu :
         mass-scaled frequency: nu = m*omega/(2*hbar) where `m` is the mass
         and `omega` the frequency of the oscillator.
         (in atomic units ``nu == omega/2``)
-    ``r`` :
+    r :
         Radial coordinate.
 
     Examples
@@ -68,11 +69,11 @@ def E_nl(n, l, hw):
     Parameters
     ==========
 
-    ``n`` :
+    n :
         The "nodal" quantum number.
-    ``l`` :
+    l :
         The orbital angular momentum.
-    ``hw`` :
+    hw :
         The harmonic oscillator parameter.
 
     Notes

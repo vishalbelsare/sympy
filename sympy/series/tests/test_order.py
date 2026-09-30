@@ -1,8 +1,10 @@
+from __future__ import annotations
 from sympy.core.add import Add
 from sympy.core.function import (Function, expand)
 from sympy.core.numbers import (I, Rational, nan, oo, pi)
 from sympy.core.singleton import S
 from sympy.core.symbol import (Symbol, symbols)
+from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import (conjugate, transpose)
 from sympy.functions.elementary.exponential import (exp, log)
 from sympy.functions.elementary.miscellaneous import sqrt
@@ -12,6 +14,7 @@ from sympy.series.order import O, Order
 from sympy.core.expr import unchanged
 from sympy.testing.pytest import raises
 from sympy.abc import w, x, y, z
+from sympy.testing.pytest import XFAIL
 
 
 def test_caching_bug():
@@ -157,7 +160,11 @@ def test_add_1():
     assert Order(3*x - 2*x**2) == Order(x)
     assert Order(1 + x) == Order(1, x)
     assert Order(1 + 1/x) == Order(1/x)
-    assert Order(log(x) + 1/log(x)) == Order(log(x))
+    # TODO : A better output for Order(log(x) + 1/log(x))
+    # could be Order(log(x)). Currently Order for expressions
+    # where all arguments would involve a log term would fall
+    # in this category and outputs for these should be improved.
+    assert Order(log(x) + 1/log(x)) == Order((log(x)**2 + 1)/log(x))
     assert Order(exp(1/x) + x) == Order(exp(1/x))
     assert Order(exp(1/x) + 1/x**20) == Order(exp(1/x))
 
@@ -165,7 +172,7 @@ def test_add_1():
 def test_ln_args():
     assert O(log(x)) + O(log(2*x)) == O(log(x))
     assert O(log(x)) + O(log(x**3)) == O(log(x))
-    assert O(log(x*y)) + O(log(x) + log(y)) == O(log(x*y))
+    assert O(log(x*y)) + O(log(x) + log(y)) == O(log(x) + log(y), x, y)
 
 
 def test_multivar_0():
@@ -242,7 +249,7 @@ def test_leading_order2():
 
 
 def test_order_leadterm():
-    assert O(x**2)._eval_as_leading_term(x) == O(x**2)
+    assert O(x**2)._eval_as_leading_term(x, None, 1) == O(x**2)
 
 
 def test_order_symbols():
@@ -382,7 +389,7 @@ def test_order_at_infinity():
 
     # issue 7207
     assert Order(exp(x), (x, oo)).expr == Order(2*exp(x), (x, oo)).expr == exp(x)
-    assert Order(y**x, (x, oo)).expr == Order(2*y**x, (x, oo)).expr == exp(log(y)*x)
+    assert Order(y**x, (x, oo)).expr == Order(2*y**x, (x, oo)).expr == exp(x*log(y))
 
     # issue 19545
     assert Order(1/x - 3/(3*x + 2), (x, oo)).expr == x**(-2)
@@ -417,6 +424,24 @@ def test_order_subs_limits():
     assert Order(x**2).subs(x, y - 1) == Order((y - 1)**2, (y, 1))
     assert Order(10*x**2, (x, 2)).subs(x, y - 1) == Order(1, (y, 3))
 
+    #issue 19120
+    assert O(x).subs(x, O(x)) == O(x)
+    assert O(x**2).subs(x, x + O(x)) == O(x**2)
+    assert O(x, (x, oo)).subs(x, O(x, (x, oo))) == O(x, (x, oo))
+    assert O(x**2, (x, oo)).subs(x, x + O(x, (x, oo))) == O(x**2, (x, oo))
+    assert (x + O(x**2)).subs(x, x + O(x**2)) == x + O(x**2)
+    assert (x**2 + O(x**2) + 1/x**2).subs(x, x + O(x**2)) == (x + O(x**2))**(-2) + O(x**2)
+    assert (x**2 + O(x**2) + 1).subs(x, x + O(x**2)) == 1 + O(x**2)
+    assert O(x, (x, oo)).subs(x, x + O(x**2, (x, oo))) == O(x**2, (x, oo))
+    assert sin(x).series(n=8).subs(x,sin(x).series(n=8)).expand() == x - x**3/3 + x**5/10 - 8*x**7/315 + O(x**8)
+    assert cos(x).series(n=8).subs(x,sin(x).series(n=8)).expand() == 1 - x**2/2 + 5*x**4/24 - 37*x**6/720 + O(x**8)
+    assert O(x).subs(x, O(1/x, (x, oo))) == O(1/x, (x, oo))
+
+@XFAIL
+def test_order_failing_due_to_solveset():
+    assert O(x**3).subs(x, exp(-x**2)) == O(exp(-3*x**2), (x, -oo))
+    raises(NotImplementedError, lambda: O(x).subs(x, O(1/x))) # mixing of order at different points
+
 
 def test_issue_9351():
     assert exp(x).series(x, 10, 1) == exp(10) + Order(x - 10, (x, 10))
@@ -432,7 +457,7 @@ def test_issue_9910():
 
 
 def test_performance_of_adding_order():
-    l = list(x**i for i in range(1000))
+    l = [x**i for i in range(1000)]
     l.append(O(x**1001))
     assert Add(*l).subs(x,1) == O(1)
 
@@ -460,5 +485,28 @@ def test_issue_22165():
     assert O(log(x)).contains(2)
 
 
+def test_issue_23231():
+    # This test checks Order for expressions having
+    # arguments containing variables in exponents/powers.
+    assert O(x**x + 2**x, (x, oo)) == O(exp(x*log(x)), (x, oo))
+    assert O(x**x + x**2, (x, oo)) == O(exp(x*log(x)), (x, oo))
+    assert O(x**x + 1/x**2, (x, oo)) == O(exp(x*log(x)), (x, oo))
+    assert O(2**x + 3**x , (x, oo)) == O(exp(x*log(3)), (x, oo))
+
+
 def test_issue_9917():
     assert O(x*sin(x) + 1, (x, oo)) == O(x, (x, oo))
+
+
+def test_issue_22836():
+    assert O(2**x + factorial(x), (x, oo)) == O(factorial(x), (x, oo))
+    assert O(2**x + factorial(x) + x**x, (x, oo)) == O(exp(x*log(x)), (x, oo))
+    assert O(x + factorial(x), (x, oo)) == O(factorial(x), (x, oo))
+
+
+def test_issue_29832():
+    # Order scaling when expanding expressions containing Order at x0 != 0
+    assert ((1 + O((x - 5)**3, (x, 5))) * (x - 5)).expand() == -5 + x + O((x - 5)**4, (x, 5))
+    assert ((1 + O((x + 4)**2, (x, -4))) * (x + 4)).expand() == 4 + x + O((x + 4)**3, (x, -4))
+    assert ((1 + O((x - 5)**3, (x, 5))) * (x + 2)).expand() == 2 + x + O((x - 5)**3, (x, 5))
+    assert ((1 + O((x - 5)**2, (x, 5))) * (x - 5)**3).expand() == ((x - 5)**3).expand() + O((x - 5)**5, (x, 5))

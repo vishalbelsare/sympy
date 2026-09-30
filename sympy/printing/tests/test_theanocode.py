@@ -6,6 +6,7 @@ keyword argument each time, this module uses the theano_code_ and
 theano_function_ functions defined below which default to using a new, empty
 cache instead.
 """
+from __future__ import annotations
 
 import logging
 
@@ -137,7 +138,6 @@ def theq(a, b):
             )
 
     return astr == bstr
-
 
 
 def test_example_symbols():

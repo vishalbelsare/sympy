@@ -1,10 +1,10 @@
 """Functions for generating interesting polynomials, e.g. for benchmarking. """
+from __future__ import annotations
 
 
 from sympy.core import Add, Mul, Symbol, sympify, Dummy, symbols
 from sympy.core.containers import Tuple
 from sympy.core.singleton import S
-from sympy.functions.elementary.miscellaneous import sqrt
 from sympy.ntheory import nextprime
 from sympy.polys.densearith import (
     dmp_add_term, dmp_neg, dmp_mul, dmp_sqr
@@ -34,7 +34,6 @@ def swinnerton_dyer_poly(n, x=None, polys=False):
         ``polys=True`` returns an expression, otherwise
         (default) returns an expression.
     """
-    from .numberfields import minimal_polynomial
     if n <= 0:
         raise ValueError(
             "Cannot generate Swinnerton-Dyer polynomial of order %s" % n)
@@ -45,6 +44,8 @@ def swinnerton_dyer_poly(n, x=None, polys=False):
         x = Dummy('x')
 
     if n > 3:
+        from sympy.functions.elementary.miscellaneous import sqrt
+        from .numberfields import minimal_polynomial
         p = 2
         a = [sqrt(2)]
         for i in range(2, n + 1):
@@ -90,13 +91,17 @@ def cyclotomic_poly(n, x=None, polys=False):
 
 
 @public
-def symmetric_poly(n, *gens, **args):
-    """Generates symmetric polynomial of order `n`.
-
-    Returns a Poly object when ``polys=True``, otherwise
-    (default) returns an expression.
+def symmetric_poly(n, *gens, polys=False):
     """
-    # TODO: use an explicit keyword argument when Python 2 support is dropped
+    Generates symmetric polynomial of order `n`.
+
+    Parameters
+    ==========
+
+    polys: bool, optional (default: False)
+        Returns a Poly object when ``polys=True``, otherwise
+        (default) returns an expression.
+    """
     gens = _analyze_gens(gens)
 
     if n < 0 or n > len(gens) or not gens:
@@ -106,10 +111,7 @@ def symmetric_poly(n, *gens, **args):
     else:
         poly = Add(*[Mul(*s) for s in subsets(gens, int(n))])
 
-    if not args.get('polys', False):
-        return poly
-    else:
-        return Poly(poly, *gens)
+    return Poly(poly, *gens) if polys else poly
 
 
 @public
@@ -179,7 +181,7 @@ def fateman_poly_F_1(n):
 
     y_0, y_1 = Y[0], Y[1]
 
-    u = y_0 + Add(*[y for y in Y[1:]])
+    u = y_0 + Add(*Y[1:])
     v = y_0**2 + Add(*[y**2 for y in Y[1:]])
 
     F = ((u + 1)*(u + 2)).as_poly(*Y)
@@ -200,16 +202,16 @@ def dmp_fateman_poly_F_1(n, K):
     v = [K(1), K(0), K(0)]
 
     for i in range(0, n):
-        v = [dmp_one(i, K), dmp_zero(i), v]
+        v = [dmp_one(i, K), dmp_zero(i, K), v]
 
     m = n - 1
 
-    U = dmp_add_term(u, dmp_ground(K(1), m), 0, n, K)
-    V = dmp_add_term(u, dmp_ground(K(2), m), 0, n, K)
+    U = dmp_add_term(u, dmp_ground(K(1), m, K), 0, n, K)
+    V = dmp_add_term(u, dmp_ground(K(2), m, K), 0, n, K)
 
     f = [[-K(3), K(0)], [], [K(1), K(0), -K(1)]]
 
-    W = dmp_add_term(v, dmp_ground(K(1), m), 0, n, K)
+    W = dmp_add_term(v, dmp_ground(K(1), m, K), 0, n, K)
     Y = dmp_raise(f, m, 1, K)
 
     F = dmp_mul(U, V, n, K)
@@ -226,7 +228,7 @@ def fateman_poly_F_2(n):
 
     y_0 = Y[0]
 
-    u = Add(*[y for y in Y[1:]])
+    u = Add(*Y[1:])
 
     H = Poly((y_0 + u + 1)**2, *Y)
 
@@ -245,7 +247,7 @@ def dmp_fateman_poly_F_2(n, K):
 
     m = n - 1
 
-    v = dmp_add_term(u, dmp_ground(K(2), m - 1), 0, n, K)
+    v = dmp_add_term(u, dmp_ground(K(2), m - 1, K), 0, n, K)
 
     f = dmp_sqr([dmp_one(m, K), dmp_neg(v, m, K)], n, K)
     g = dmp_sqr([dmp_one(m, K), v], n, K)
@@ -280,7 +282,7 @@ def dmp_fateman_poly_F_3(n, K):
     for i in range(0, n - 1):
         u = dmp_add_term([u], dmp_one(i, K), n + 1, i + 1, K)
 
-    v = dmp_add_term(u, dmp_ground(K(2), n - 2), 0, n, K)
+    v = dmp_add_term(u, dmp_ground(K(2), n - 2, K), 0, n, K)
 
     f = dmp_sqr(
         dmp_add_term([dmp_neg(v, n - 1, K)], dmp_one(n - 1, K), n + 1, n, K), n, K)

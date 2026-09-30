@@ -22,6 +22,7 @@ References
        linear ODEs, (2004).
        https://arxiv.org/abs/math-ph/0402063
 '''
+from __future__ import annotations
 
 from sympy.core import S, Pow
 from sympy.core.function import expand
@@ -97,6 +98,14 @@ def equivalence_hypergeometric(A, B, func):
     # computing I0 of the given equation
     I0 = powdenest(simplify(factor(((J1/k**2) - S(1)/4)/((x**k)**2))), force=True)
     I0 = factor(cancel(powdenest(I0.subs(x, x**(S(1)/k)), force=True)))
+
+    # Before this point I0, J1 might be functions of e.g. sqrt(x) but replacing
+    # x with x**(1/k) should result in I0 being a rational function of x or
+    # otherwise the hypergeometric solver cannot be used. Note that k can be a
+    # non-integer rational such as 2/7.
+    if not I0.is_rational_function(x):
+        return None
+
     num, dem = I0.as_numer_denom()
 
     max_num_pow = max(_power_counting((num, )))
@@ -136,10 +145,10 @@ def match_2nd_2F1_hypergeometric(I, k, sing_point, func):
     beta = Wild("beta")
     gamma = Wild("gamma")
     delta = Wild("delta")
-    # I0 of the standerd 2F1 equation.
+    # I0 of the standard 2F1 equation.
     I0 = ((a-b+1)*(a-b-1)*x**2 + 2*((1-a-b)*c + 2*a*b)*x + c*(c-2))/(4*x**2*(x-1)**2)
     if sing_point != [0, 1]:
-        # If singular point is [0, 1] then we have standerd equation.
+        # If singular point is [0, 1] then we have standard equation.
         eqs = []
         sing_eqs = [-beta/alpha, -delta/gamma, (delta-beta)/(alpha-gamma)]
         # making equations for the finding the mobius transformation
@@ -171,14 +180,14 @@ def match_2nd_2F1_hypergeometric(I, k, sing_point, func):
     I = factor(I)
     dict_I = {x**2:0, x:0, 1:0}
     I0_num, I0_dem = I0.as_numer_denom()
-    # collecting coeff of (x**2, x), of the standerd equation.
+    # collecting coeff of (x**2, x), of the standard equation.
     # substituting (a-b) = s, (a+b) = r
     dict_I0 = {x**2:s**2 - 1, x:(2*(1-r)*c + (r+s)*(r-s)), 1:c*(c-2)}
     # collecting coeff of (x**2, x) from I0 of the given equation.
     dict_I.update(collect(expand(cancel(I*I0_dem)), [x**2, x], evaluate=False))
     eqs = []
     # We are comparing the coeff of powers of different x, for finding the values of
-    # parameters of standerd equation.
+    # parameters of standard equation.
     for key in [x**2, x, 1]:
         eqs.append(Eq(dict_I[key], dict_I0[key]))
 

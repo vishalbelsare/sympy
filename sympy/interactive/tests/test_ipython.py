@@ -1,4 +1,5 @@
 """Tests of tools for setting up interactive IPython sessions. """
+from __future__ import annotations
 
 from sympy.interactive.session import (init_ipython_session,
     enable_automatic_symbols, enable_automatic_int_sympification)
@@ -9,10 +10,10 @@ from sympy.testing.pytest import raises
 
 # TODO: The code below could be made more granular with something like:
 #
-# @requires('IPython', version=">=0.11")
+# @requires('IPython', version=">=1.0")
 # def test_automatic_symbols(ipython):
 
-ipython = import_module("IPython", min_module_version="0.11")
+ipython = import_module("IPython", min_module_version="1.0")
 
 if not ipython:
     #bin/test will not execute any tests now
@@ -126,8 +127,6 @@ def test_print_builtin_option():
     else:
         text = app.user_ns['a'][0]['text/plain']
         raises(KeyError, lambda: app.user_ns['a'][0]['text/latex'])
-    # Note : Unicode of Python2 is equivalent to str in Python3. In Python 3 we have one
-    # text type: str which holds Unicode data and two byte types bytes and bytearray.
     # XXX: How can we make this ignore the terminal width? This test fails if
     # the terminal is too narrow.
     assert text in ("{pi: 3.14, n_i: 3}",

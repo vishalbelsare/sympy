@@ -1,4 +1,6 @@
-from sympy.core.mul import prod
+from __future__ import annotations
+from math import prod
+
 from sympy.core.numbers import Rational
 from sympy.functions.elementary.exponential import exp
 from sympy.functions.elementary.miscellaneous import sqrt

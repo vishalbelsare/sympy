@@ -1,32 +1,33 @@
 """Tests for tools for solving inequalities and systems of inequalities. """
+from __future__ import annotations
 
 from sympy.concrete.summations import Sum
 from sympy.core.function import Function
-from sympy.core.numbers import (I, Rational, oo, pi)
-from sympy.core.relational import (Eq, Ge, Gt, Le, Lt, Ne)
+from sympy.core.numbers import I, Rational, oo, pi
+from sympy.core.relational import Eq, Ge, Gt, Le, Lt, Ne
 from sympy.core.singleton import S
 from sympy.core.symbol import (Dummy, Symbol)
 from sympy.functions.elementary.complexes import Abs
-from sympy.functions.elementary.exponential import (exp, log)
-from sympy.functions.elementary.miscellaneous import (root, sqrt)
+from sympy.functions.elementary.exponential import exp, log
+from sympy.functions.elementary.miscellaneous import root, sqrt
 from sympy.functions.elementary.piecewise import Piecewise
-from sympy.functions.elementary.trigonometric import (cos, sin, tan)
+from sympy.functions.elementary.trigonometric import cos, sin, tan
 from sympy.integrals.integrals import Integral
-from sympy.logic.boolalg import (And, Or)
-from sympy.polys.polytools import (Poly, PurePoly)
-from sympy.sets.sets import (FiniteSet, Interval, Union)
+from sympy.logic.boolalg import And, Or
+from sympy.polys.polytools import Poly, PurePoly
+from sympy.sets.sets import FiniteSet, Interval, Union
 from sympy.solvers.inequalities import (reduce_inequalities,
                                         solve_poly_inequality as psolve,
                                         reduce_rational_inequalities,
                                         solve_univariate_inequality as isolve,
                                         reduce_abs_inequality,
+                                        solve_univariate_inequality,
                                         _solve_inequality)
 from sympy.polys.rootoftools import rootof
 from sympy.solvers.solvers import solve
 from sympy.solvers.solveset import solveset
-from sympy.abc import x, y
-
 from sympy.core.mod import Mod
+from sympy.abc import x, y
 
 from sympy.testing.pytest import raises, XFAIL
 
@@ -389,7 +390,7 @@ def test_issue_8974():
 
 def test_issue_10198():
     assert reduce_inequalities(
-        -1 + 1/abs(1/x - 1) < 0) == (x > -oo) & (x < 1/2) & Ne(x, 0)
+        -1 + 1/abs(1/x - 1) < 0) == (x > -oo) & (x < S(1)/2) & Ne(x, 0)
 
     assert reduce_inequalities(abs(1/sqrt(x)) - 1, x) == Eq(x, 1)
     assert reduce_abs_inequality(-3 + 1/abs(1 - 1/x), '<', x) == \
@@ -486,3 +487,54 @@ def test__pt():
     assert _pt(x, oo) == _pt(oo, x) == x + 1
     assert _pt(x, -oo) == _pt(-oo, x) == x - 1
     raises(ValueError, lambda: _pt(Dummy('i', infinite=True), S.One))
+
+
+def test_issue_25697():
+    assert _solve_inequality(log(x, 3) <= 2, x) == (x <= 9) & (S.Zero < x)
+
+
+def test_issue_25738():
+    assert reduce_inequalities(3 < abs(x)
+        ) == reduce_inequalities(pi < abs(x)).subs(pi, 3)
+
+
+def test_issue_25983():
+    assert(reduce_inequalities(pi/Abs(x) <= 1) == ((pi <= x) & (x < oo)) | ((-oo < x) & (x <= -pi)))
+
+
+def test_issue_30529():  # do not allow singularity cancellation
+    assert reduce_inequalities(1/x <= 1/x, x) == Ne(x, 0)
+    assert reduce_inequalities([1/sin(x) <= 1/sin(x)], x) == (-oo < x) & (x < oo) & Ne(sin(x), 0)
+    assert reduce_rational_inequalities([[1/x <= 1/x]], x) == (x > -oo) & (x < oo) & Ne(x, 0)
+
+    e = x/(x - 1) + 1/x <= x + 1/x
+    rv = reduce_inequalities(e, x)
+    assert rv.subs(x, 0) is S.false
+    assert rv.subs(x, S.Half) is S.true
+    assert rv.subs(x, 1) is S.false
+    assert rv.subs(x, 2) is S.true
+
+    # multiple lost poles
+    assert reduce_rational_inequalities(
+        [[1/x + 1/(x - 1) + x < 1/x + 1/(x - 1) + 2]], x) == (
+            (-oo < x) & (x < 0)) | ((S(0) < x) & (x < 1)) | ((S(1) < x) & (x < 2))
+    # inexact lost pole -- tests exact=False bookkeeping
+    assert reduce_rational_inequalities(
+        [[1/x + 1/(x - .1) + x < 1/x + 1/(x - .1) + 2]], x) == (
+            (S(0.1) < x) & (x < 2.0)) | ((x < 0.1) & (S(0) < x)) | ((-oo < x) & (x < 0))
+
+    # denominator multiplicity decreases, but the pole is not lost
+    assert reduce_rational_inequalities(
+        [[1/x**2 < (x + 1)/x**2]], x) == (S(0) < x) & (x < oo)
+    # common denominator, but no cancellation of the pole
+    assert reduce_rational_inequalities([[1/x < 2/x]], x) == (S(0) < x) & (x < oo)
+
+
+def test_solve_univariate_inequality_random_symbol():
+    from sympy.stats import Normal
+
+    Z = Normal('Z', 0, 1)
+    expected = Interval.open(1, oo)
+
+    assert solve_univariate_inequality(Z > 1, Z, relational=False) == expected
+    assert (Z > 1).as_set() == expected

@@ -1,7 +1,8 @@
 """
 The Schur number S(k) is the largest integer n for which the interval [1,n]
-can be partitioned into k sum-free sets.(http://mathworld.wolfram.com/SchurNumber.html)
+can be partitioned into k sum-free sets.(https://mathworld.wolfram.com/SchurNumber.html)
 """
+from __future__ import annotations
 import math
 from sympy.core import S
 from sympy.core.basic import Basic
@@ -153,7 +154,7 @@ def _generate_next_list(current_list, n):
         new_item = temp_1 + temp_2
         new_list.append(new_item)
 
-    last_list = [3*k + 1 for k in range(0, len(current_list)+1) if 3*k + 1 <= n]
+    last_list = [3*k + 1 for k in range(len(current_list)+1) if 3*k + 1 <= n]
     new_list.append(last_list)
     current_list = new_list
 

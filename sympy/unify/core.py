@@ -15,6 +15,7 @@ It is modified in the following ways:
 A more traditional version can be found here
 http://aima.cs.berkeley.edu/python/logic.html
 """
+from __future__ import annotations
 
 from sympy.utilities.iterables import kbins
 
@@ -28,7 +29,7 @@ class Compound:
         self.args = args
 
     def __eq__(self, other):
-        return (type(self) == type(other) and self.op == other.op and
+        return (type(self) is type(other) and self.op == other.op and
                 self.args == other.args)
 
     def __hash__(self):
@@ -43,7 +44,7 @@ class Variable:
         self.arg = arg
 
     def __eq__(self, other):
-        return type(self) == type(other) and self.arg == other.arg
+        return type(self) is type(other) and self.arg == other.arg
 
     def __hash__(self):
         return hash((type(self), self.arg))
@@ -62,7 +63,7 @@ class CondVariable:
         self.valid = valid
 
     def __eq__(self, other):
-        return (type(self) == type(other) and
+        return (type(self) is type(other) and
                 self.arg == other.arg and
                 self.valid == other.valid)
 

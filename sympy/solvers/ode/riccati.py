@@ -62,7 +62,7 @@ of the algorithm, a few definitions to understand are -
     `\infty` if `a(\frac{1}{x})` has a pole at 0.
 
 Every pole is associated with an order that is equal to the multiplicity
-of its appearence as a root of `T(x)`. A pole is called a simple pole if
+of its appearance as a root of `T(x)`. A pole is called a simple pole if
 it has an order 1. Similarly, a pole is called a multiple pole if it has
 an order `\ge` 2.
 
@@ -124,7 +124,7 @@ to get the solution correctly.
 Implementation
 ==============
 
-In this implementatin, we use ``Poly`` to represent a rational function
+In this implementation, we use ``Poly`` to represent a rational function
 rather than using ``Expr`` since ``Poly`` is much faster. Since we cannot
 represent rational functions directly using ``Poly``, we instead represent
 a rational function with 2 ``Poly`` objects - one for its numerator and
@@ -153,7 +153,7 @@ the number of poles be `n`. Also find the valuation of `a(x)` at
 NOTE: Although the algorithm considers `\infty` as a pole, it is
 not mentioned if it a part of the set of finite poles. `\infty`
 is NOT a part of the set of finite poles. If a pole exists at
-`\infty`, we use its multiplicty to find the laurent series of
+`\infty`, we use its multiplicity to find the laurent series of
 `a(x)` about `\infty`.
 
 Step 6 : Find `n` c-vectors (one for each pole) and 1 d-vector using
@@ -195,6 +195,7 @@ Step 13 : For each solution in ``sol``, apply an inverse transformation,
 so that the solutions of the original equation are found using the
 solutions of the equation in its normal form.
 """
+from __future__ import annotations
 
 
 from itertools import product
@@ -271,7 +272,7 @@ def linsolve_dict(eq, syms):
     sol = linsolve(eq, syms)
     if not sol:
         return {}
-    return {k:v for k, v in zip(syms, list(sol)[0])}
+    return dict(zip(syms, list(sol)[0]))
 
 
 def match_riccati(eq, f, x):
@@ -663,10 +664,12 @@ def compute_m_ybar(x, poles, choice, N):
 
     # Calculate the first (nested) summation for ybar
     # as given in Step 9 of the Thesis (Pg 82)
-    for i in range(len(poles)):
-        for j in range(len(choice[i])):
-            ybar += choice[i][j]/(x - poles[i])**(j+1)
-        m -= Poly(choice[i][0], x, extension=True)
+    dybar = []
+    for i, polei in enumerate(poles):
+        for j, cij in enumerate(choice[i]):
+            dybar.append(cij/(x - polei)**(j + 1))
+        m -=Poly(choice[i][0], x, extension=True)  # can't accumulate Poly and use with Add
+    ybar += Add(*dybar)
 
     # Calculate the second summation for ybar
     for i in range(N+1):
@@ -695,10 +698,13 @@ def solve_aux_eq(numa, dena, numy, deny, x, m):
         auxeq += px.diff(x)*(deny**2*dena)
     if m != 0:
         # m is a non-zero integer. Find the constant terms using undetermined coefficients
-        return psol, linsolve_dict(auxeq.all_coeffs(), psyms), True
+        coeffs = linsolve_dict(auxeq.all_coeffs(), psyms)
+        free_coeffs = set().union(*(value.free_symbols for value in coeffs.values()))
+        is_general = bool(free_coeffs.intersection(psyms))
+        return psol, coeffs, True, is_general
     else:
         # m == 0 . Check if 1 (x**0) is a solution to the auxiliary equation
-        return S.One, auxeq, auxeq == 0
+        return S.One, auxeq, auxeq == 0, False
 
 
 def remove_redundant_sols(sol1, sol2, x):
@@ -759,9 +765,9 @@ def get_gen_sol_from_part_sol(part_sols, a, x):
     elif len(part_sols) == 1:
         y1 = part_sols[0]
         i = exp(Integral(2*y1, x))
-        z = i * Integral(a/i, x)
+        z = i * (Integral(1/i, x) + Dummy('C1'))
         z = z.doit()
-        if a == 0 or z == 0:
+        if z == 0:
             return y1
         return y1 + 1/z
 
@@ -771,13 +777,8 @@ def get_gen_sol_from_part_sol(part_sols, a, x):
     # rational particular solutions.
     elif len(part_sols) == 2:
         y1, y2 = part_sols
-        # One of them already has a constant
-        if len(y1.atoms(Dummy)) + len(y2.atoms(Dummy)) > 0:
-            u = exp(Integral(y2 - y1, x)).doit()
-        # Introduce a constant
-        else:
-            C1 = Dummy('C1')
-            u = C1*exp(Integral(y2 - y1, x)).doit()
+        C1 = Dummy('C1')
+        u = C1*exp(Integral(y2 - y1, x)).doit()
         if u == 1:
             return y2
         return (y2*u - y1)/(u - 1)
@@ -808,11 +809,12 @@ def solve_riccati(fx, x, b0, b1, b2, gensol=False):
 
     # Step 3 : a(x) is 0
     if num == 0:
-        presol.append(1/(x + Dummy('C1')))
+        sol = 1/(x + Dummy('C1'))
+        presol.append((sol, True))
 
     # Step 4 : a(x) is a non-zero constant
     elif x not in num.free_symbols.union(den.free_symbols):
-        presol.extend([sqrt(a), -sqrt(a)])
+        presol.extend([(sqrt(a), False), (-sqrt(a), False)])
 
     # Step 5 : Find poles and valuation at infinity
     poles = roots(den, x)
@@ -855,36 +857,45 @@ def solve_riccati(fx, x, b0, b1, b2, gensol=False):
             if m.is_nonnegative == True and m.is_integer == True:
 
                 # Step 11 : Find polynomial solutions of degree m for the auxiliary equation
-                psol, coeffs, exists = solve_aux_eq(num, den, numy, deny, x, m)
+                psol, coeffs, exists, is_general = solve_aux_eq(num, den, numy, deny, x, m)
 
                 # Step 12 : If valid polynomial solution exists, append solution.
                 if exists:
                     # m == 0 case
                     if psol == 1 and coeffs == 0:
                         # p(x) = 1, so p'(x)/p(x) term need not be added
-                        presol.append(ybar)
+                        presol.append((ybar, False))
                     # m is a positive integer and there are valid coefficients
                     elif len(coeffs):
                         # Substitute the valid coefficients to get p(x)
                         psol = psol.xreplace(coeffs)
                         # y(x) = ybar(x) + p'(x)/p(x)
-                        presol.append(ybar + psol.diff(x)/psol)
+                        sol = ybar + psol.diff(x)/psol
+                        presol.append((sol, is_general))
 
     # Remove redundant solutions from the list of existing solutions
     remove = set()
     for i in range(len(presol)):
         for j in range(i+1, len(presol)):
-            rem = remove_redundant_sols(presol[i], presol[j], x)
+            rem = remove_redundant_sols(presol[i][0], presol[j][0], x)
             if rem is not None:
                 remove.add(rem)
-    sols = [x for x in presol if x not in remove]
+    sols = [sol for sol in presol if sol[0] not in remove]
 
     # Step 15 : Inverse transform the solutions of the equation in normal form
     bp = -b2.diff(x)/(2*b2**2) - b1/(2*b2)
 
     # If general solution is required, compute it from the particular solutions
     if gensol:
-        sols = [get_gen_sol_from_part_sol(sols, a, x)]
+        for expr, is_general in sols:
+            if is_general:
+                sols = [expr]
+                break
+        else:
+            part_sols = [expr for expr, _ in sols]
+            sols = [get_gen_sol_from_part_sol(part_sols, a, x)]
+    else:
+        sols = [expr for expr, _ in sols]
 
     # Inverse transform the particular solutions
     presol = [Eq(fx, riccati_inverse_normal(y, x, b1, b2, bp).cancel(extension=True)) for y in sols]

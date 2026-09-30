@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core import S
 from sympy.core.sympify import _sympify
 from sympy.functions import KroneckerDelta
@@ -24,7 +25,7 @@ class PermutationMatrix(MatrixExpr):
     Examples
     ========
 
-    >>> from sympy.matrices import Matrix, PermutationMatrix
+    >>> from sympy import Matrix, PermutationMatrix
     >>> from sympy.combinatorics import Permutation
 
     Creating a permutation matrix:
@@ -75,7 +76,7 @@ class PermutationMatrix(MatrixExpr):
     def is_Identity(self):
         return self.args[0].is_Identity
 
-    def doit(self):
+    def doit(self, **hints):
         if self.is_Identity:
             return Identity(self.rows)
         return self
@@ -184,12 +185,12 @@ class MatrixPermute(MatrixExpr):
     =====
 
     This follows the same notation used in
-    :meth:`sympy.matrices.common.MatrixCommon.permute`.
+    :meth:`sympy.matrices.matrixbase.MatrixBase.permute`.
 
     Examples
     ========
 
-    >>> from sympy.matrices import Matrix, MatrixPermute
+    >>> from sympy import Matrix, MatrixPermute
     >>> from sympy.combinatorics import Permutation
 
     Permuting the matrix rows:
@@ -215,7 +216,7 @@ class MatrixPermute(MatrixExpr):
     See Also
     ========
 
-    sympy.matrices.common.MatrixCommon.permute
+    sympy.matrices.matrixbase.MatrixBase.permute
     """
     def __new__(cls, mat, perm, axis=S.Zero):
         from sympy.combinatorics.permutations import Permutation
@@ -251,12 +252,12 @@ class MatrixPermute(MatrixExpr):
 
         return super().__new__(cls, mat, perm, axis)
 
-    def doit(self, deep=True):
+    def doit(self, deep=True, **hints):
         mat, perm, axis = self.args
 
         if deep:
-            mat = mat.doit(deep=deep)
-            perm = perm.doit(deep=deep)
+            mat = mat.doit(deep=deep, **hints)
+            perm = perm.doit(deep=deep, **hints)
 
         if perm.is_Identity:
             return mat

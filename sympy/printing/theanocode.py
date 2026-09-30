@@ -1,4 +1,14 @@
-from typing import Any, Dict as tDict
+"""
+.. deprecated:: 1.8
+
+  ``sympy.printing.theanocode`` is deprecated. Theano has been renamed to
+  Aesara. Use ``sympy.printing.aesaracode`` instead. See
+  :ref:`theanocode-deprecated` for more information.
+
+"""
+from __future__ import annotations
+import math
+from typing import Any
 
 from sympy.external import import_module
 from sympy.printing.printer import Printer
@@ -7,9 +17,14 @@ import sympy
 from functools import partial
 
 from sympy.utilities.decorator import doctest_depends_on
-from sympy.utilities.exceptions import SymPyDeprecationWarning
+from sympy.utilities.exceptions import sympy_deprecation_warning
+
+
+__doctest_requires__ = {('theano_function',): ['theano']}
+
 
 theano = import_module('theano')
+
 
 if theano:
     ts = theano.scalar
@@ -97,7 +112,7 @@ class TheanoPrinter(Printer):
     printmethod = "_theano"
 
     def __init__(self, *args, **kwargs):
-        self.cache = kwargs.pop('cache', dict())
+        self.cache = kwargs.pop('cache', {})
         super().__init__(*args, **kwargs)
 
     def _get_key(self, s, name=None, dtype=None, broadcastable=None):
@@ -215,7 +230,7 @@ class TheanoPrinter(Printer):
                         for i in (expr.start, expr.stop, expr.step)])
 
     def _print_Pi(self, expr, **kwargs):
-        return 3.141592653589793
+        return math.pi
 
     def _print_Exp1(self, expr, **kwargs):
         return ts.exp(1)
@@ -305,12 +320,18 @@ class TheanoPrinter(Printer):
         return self._print(expr, dtypes=dtypes, broadcastables=broadcastables)
 
 
-global_cache = {}  # type: tDict[Any, Any]
+global_cache: dict[Any, Any] = {}
 
 
 def theano_code(expr, cache=None, **kwargs):
     """
     Convert a SymPy expression into a Theano graph variable.
+
+    .. deprecated:: 1.8
+
+      ``sympy.printing.theanocode`` is deprecated. Theano has been renamed to
+      Aesara. Use ``sympy.printing.aesaracode`` instead. See
+      :ref:`theanocode-deprecated` for more information.
 
     Parameters
     ==========
@@ -336,11 +357,12 @@ def theano_code(expr, cache=None, **kwargs):
         expression graph.
 
     """
-    SymPyDeprecationWarning(
-        feature="sympy.printing.theanocode",
-        useinstead="Theano is deprecated; use Aesara and sympy.printing.aesaracode",
-        issue=21150,
-        deprecated_since_version="1.8").warn()
+    sympy_deprecation_warning(
+        """
+        sympy.printing.theanocode is deprecated. Theano has been renamed to
+        Aesara. Use sympy.printing.aesaracode instead.""",
+        deprecated_since_version="1.8",
+    active_deprecations_target='theanocode-deprecated')
 
     if not theano:
         raise ImportError("theano is required for theano_code")
@@ -383,7 +405,7 @@ def dim_handling(inputs, dim=None, dims=None, broadcastables=None):
         values (tuple of ``bool``\ s).
     """
     if dim is not None:
-        return {s: (False,) * dim for s in inputs}
+        return dict.fromkeys(inputs, (False,) * dim)
 
     if dims is not None:
         maxdim = max(dims.values())
@@ -403,6 +425,12 @@ def theano_function(inputs, outputs, scalar=False, *,
         dim=None, dims=None, broadcastables=None, **kwargs):
     """
     Create a Theano function from SymPy expressions.
+
+    .. deprecated:: 1.8
+
+      ``sympy.printing.theanocode`` is deprecated. Theano has been renamed to
+      Aesara. Use ``sympy.printing.aesaracode`` instead. See
+      :ref:`theanocode-deprecated` for more information.
 
     The inputs and outputs are converted to Theano variables using
     :func:`.theano_code` and then passed to ``theano.function``.
@@ -488,11 +516,11 @@ def theano_function(inputs, outputs, scalar=False, *,
     dim_handling
 
     """
-    SymPyDeprecationWarning(
-        feature="sympy.printing.theanocode",
-        useinstead="Theano is deprecated; use Aesara and sympy.printing.aesaracode",
-        issue=21150,
-        deprecated_since_version="1.8").warn()
+    sympy_deprecation_warning(
+        """
+        sympy.printing.theanocode is deprecated. Theano has been renamed to Aesara. Use sympy.printing.aesaracode instead""",
+        deprecated_since_version="1.8",
+    active_deprecations_target='theanocode-deprecated')
 
     if not theano:
         raise ImportError("theano is required for theano_function")

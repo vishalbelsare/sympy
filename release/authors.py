@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 
-import os
 from pathlib import Path
 from subprocess import check_output
 import unicodedata
 
 
-def main(version, outdir):
+def main(version, prevversion, outdir):
     """
     Print authors text to put at the bottom of the release notes
     """
     outdir = Path(outdir)
-    authors, authorcount, newauthorcount = get_authors(version)
+    authors, authorcount, newauthorcount = get_authors(version, prevversion)
 
     authors_text = f"""## Authors
 
@@ -31,8 +30,7 @@ Thanks to everyone who contributed to this release!
     authors_text += '\n'.join(authors_lines)
 
     # Output to file and to screen
-    with open(outdir / 'authors.txt', 'w') as authorsfile:
-        authorsfile.write(authors_text)
+    Path(outdir / 'authors.txt').write_text(authors_text)
 
     print()
     print(blue("Here are the authors to put at the bottom of the release notes."))
@@ -44,7 +42,11 @@ def blue(text):
     return "\033[34m%s\033[0m" % text
 
 
-def get_authors(version):
+def red(text):
+    return "\033[31m%s\033[0m" % text
+
+
+def get_authors(version, prevversion):
     """
     Get the list of authors since the previous release
 
@@ -74,7 +76,11 @@ def get_authors(version):
         # Convert things like Čertík to Certik
         return unicodedata.normalize('NFKD', text).encode('ascii', 'ignore')
 
-    old_release_tag = get_previous_version_tag(version)
+    # The get_previous_version function can be flakey so we require the
+    # previous version to be provided explicitly by the caller.
+    #
+    #old_release_tag = get_previous_version_tag(version)
+    old_release_tag = 'sympy-' + prevversion
 
     out = check_output(['git', '--no-pager', 'log', old_release_tag + '..', '--format=%aN'])
     releaseauthors = set(out.decode('utf-8').strip().split('\n'))
@@ -115,7 +121,7 @@ def get_previous_version_tag(version):
             # never happens, so just error
             cmdline = f'git rev-list --parents -n 1 {curtag}'
             print(cmdline)
-            parents = check_output(cmdline).decode('utf-8').strip().split()
+            check_output(cmdline.split()).decode('utf-8').strip().split()
             # rev-list prints the current commit and then all its parents
             # If the tagged commit *is* a merge commit, just comment this
             # out, and manually make sure `get_previous_version_tag` is correct

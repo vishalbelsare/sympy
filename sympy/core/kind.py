@@ -24,6 +24,7 @@ This module defines basic kinds for core objects. Other kinds such as
        This approach is experimental, and can be replaced or deleted in the future.
        See https://github.com/sympy/sympy/pull/20549.
 """
+from __future__ import annotations
 
 from collections import defaultdict
 
@@ -55,7 +56,7 @@ class Kind(object, metaclass=KindMeta):
 
     Kind of every object must be carefully selected so that it shows the
     intention of design. Expressions may have different kind according
-    to the kind of its arguements. For example, arguements of ``Add``
+    to the kind of its arguments. For example, arguments of ``Add``
     must have common kind since addition is group operator, and the
     resulting ``Add()`` has the same kind.
 
@@ -73,11 +74,10 @@ class Kind(object, metaclass=KindMeta):
 
     """
     def __new__(cls, *args):
-        if args in cls._inst:
-            inst = cls._inst[args]
-        else:
-            inst = super().__new__(cls)
-            cls._inst[args] = inst
+        inst = cls._inst.get(args)
+        if inst is None:
+            candidate = super().__new__(cls)
+            inst = cls._inst.setdefault(args, candidate)
         return inst
 
 
@@ -167,7 +167,7 @@ class _BooleanKind(Kind):
     Kind for boolean objects.
 
     SymPy's ``S.true``, ``S.false``, and built-in ``True`` and ``False``
-    have this kind. Boolean number ``1`` and ``0`` are not relevent.
+    have this kind. Boolean number ``1`` and ``0`` are not relevant.
 
     Examples
     ========

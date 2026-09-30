@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.concrete.products import Product
 from sympy.concrete.summations import Sum
 from sympy.core.basic import Basic
@@ -288,7 +289,7 @@ def CircularEnsemble(sym, dim):
 
 def CircularUnitaryEnsemble(sym, dim):
     """
-    Represents Cicular Unitary Ensembles.
+    Represents Circular Unitary Ensembles.
 
     Examples
     ========
@@ -303,7 +304,7 @@ def CircularUnitaryEnsemble(sym, dim):
     ====
 
     As can be seen above in the example, density of CiruclarUnitaryEnsemble
-    is not evaluated becuase the exact definition is based on haar measure of
+    is not evaluated because the exact definition is based on haar measure of
     unitary group which is not unique.
     """
     sym, dim = _symbol_converter(sym), _sympify(dim)
@@ -313,7 +314,7 @@ def CircularUnitaryEnsemble(sym, dim):
 
 def CircularOrthogonalEnsemble(sym, dim):
     """
-    Represents Cicular Orthogonal Ensembles.
+    Represents Circular Orthogonal Ensembles.
 
     Examples
     ========
@@ -328,7 +329,7 @@ def CircularOrthogonalEnsemble(sym, dim):
     ====
 
     As can be seen above in the example, density of CiruclarOrthogonalEnsemble
-    is not evaluated becuase the exact definition is based on haar measure of
+    is not evaluated because the exact definition is based on haar measure of
     unitary group which is not unique.
     """
     sym, dim = _symbol_converter(sym), _sympify(dim)
@@ -338,7 +339,7 @@ def CircularOrthogonalEnsemble(sym, dim):
 
 def CircularSymplecticEnsemble(sym, dim):
     """
-    Represents Cicular Symplectic Ensembles.
+    Represents Circular Symplectic Ensembles.
 
     Examples
     ========
@@ -353,7 +354,7 @@ def CircularSymplecticEnsemble(sym, dim):
     ====
 
     As can be seen above in the example, density of CiruclarSymplecticEnsemble
-    is not evaluated becuase the exact definition is based on haar measure of
+    is not evaluated because the exact definition is based on haar measure of
     unitary group which is not unique.
     """
     sym, dim = _symbol_converter(sym), _sympify(dim)

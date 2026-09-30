@@ -31,6 +31,7 @@ Basic polynomial manipulation functions
 .. autofunction:: quo
 .. autofunction:: exquo
 .. autofunction:: half_gcdex
+.. autofunction:: gcdex_steps
 .. autofunction:: gcdex
 .. autofunction:: invert
 .. autofunction:: subresultants
@@ -60,6 +61,7 @@ Basic polynomial manipulation functions
 .. autofunction:: intervals
 .. autofunction:: refine_root
 .. autofunction:: count_roots
+.. autofunction:: all_roots
 .. autofunction:: real_roots
 .. autofunction:: nroots
 .. autofunction:: ground_roots
@@ -160,10 +162,22 @@ Orthogonal polynomials
 .. autofunction:: chebyshevu_poly
 .. autofunction:: gegenbauer_poly
 .. autofunction:: hermite_poly
+.. autofunction:: hermite_prob_poly
 .. autofunction:: jacobi_poly
 .. autofunction:: legendre_poly
 .. autofunction:: laguerre_poly
 .. autofunction:: spherical_bessel_fn
+
+Appell sequences
+================
+
+.. currentmodule:: sympy.polys.appellseqs
+
+.. autofunction:: bernoulli_poly
+.. autofunction:: bernoulli_c_poly
+.. autofunction:: genocchi_poly
+.. autofunction:: euler_poly
+.. autofunction:: andre_poly
 
 Manipulation of rational functions
 ==================================
@@ -188,3 +202,8 @@ Dispersion of Polynomials
 
 .. autofunction:: dispersionset
 .. autofunction:: dispersion
+
+Type Annotations
+================
+
+.. py:class:: collections.abc.Iterator

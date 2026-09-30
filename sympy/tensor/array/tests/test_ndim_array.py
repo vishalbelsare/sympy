@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.testing.pytest import raises
 from sympy.functions.elementary.trigonometric import sin, cos
 from sympy.matrices.dense import Matrix
@@ -9,6 +10,11 @@ from sympy.tensor.array.sparse_ndim_array import (
     ImmutableSparseNDimArray, MutableSparseNDimArray)
 
 from sympy.abc import x, y
+
+mutable_array_types = [
+    MutableDenseNDimArray,
+    MutableSparseNDimArray
+]
 
 array_types = [
     ImmutableDenseNDimArray,
@@ -46,7 +52,52 @@ def test_issue_18361():
     assert simplify(B) == Array([1, 0])
     assert simplify(C) == Array([x + 1, sin(2*x)])
 
+
 def test_issue_20222():
     A = Array([[1, 2], [3, 4]])
     B = Matrix([[1,2],[3,4]])
     raises(TypeError, lambda: A - B)
+
+
+def test_issue_17851():
+    for array_type in array_types:
+        A = array_type([])
+        assert isinstance(A, array_type)
+        assert A.shape == (0,)
+        assert list(A) == []
+
+
+def test_issue_and_18715():
+    for array_type in mutable_array_types:
+        A = array_type([0, 1, 2])
+        A[0] += 5
+        assert A[0] == 5
+
+
+def test_applyfunc_scalar_and_iterator_input():
+    # applyfunc on a 0-dim (scalar) array used to crash: it builds the new
+    # array from a ``map`` object, and the shape==() length check called
+    # ``len()`` on that one-shot iterator.  This also covers passing a bare
+    # iterator (map/generator) together with an explicit shape.
+    for array_type in array_types:
+        scalar = array_type(5)
+        assert scalar.shape == ()
+        assert array_type(5).applyfunc(lambda e: e + 1)[()] == 6
+        assert scalar.applyfunc(lambda e: e**2)[()] == 25
+        # a one-shot iterator with an explicit shape must be accepted:
+        assert array_type(iter([7]), ())[()] == 7
+        assert list(array_type((i for i in range(3)), (3,))) == [0, 1, 2]
+
+
+def test_eval_derivative_direction():
+    # NDimArray._eval_derivative used to differentiate in the wrong
+    # direction (variable.diff(element) instead of element.diff(variable)),
+    # which was masked for arrays of plain Symbols but wrong in general.
+    from sympy.core.function import Derivative, Function
+    f = Function('f')
+    for ArrayType in array_types:
+        arr = ArrayType([f(x), x])
+        assert arr._eval_derivative(x) == ArrayType([f(x).diff(x), 1])
+        arr2 = ArrayType([[x, y], [x*y, x**2]])
+        assert arr2._eval_derivative(x) == ArrayType([[1, 0], [y, 2*x]])
+        assert Derivative(arr2, x).doit() == ArrayType([[1, 0], [y, 2*x]])

@@ -1,6 +1,8 @@
+from __future__ import annotations
 import sympy
 import tempfile
 import os
+from pathlib import Path
 from sympy.core.mod import Mod
 from sympy.core.relational import Eq
 from sympy.core.symbol import symbols
@@ -112,8 +114,10 @@ def runtest_issue_10274(language, backend):
     assert f(1, 1, 1) == 1
 
     for file in os.listdir(tmp):
-        if file.startswith("wrapped_code_") and file.endswith(".c"):
-            fil = open(tmp + '/' + file)
+        if not (file.startswith("wrapped_code_") and file.endswith(".c")):
+            continue
+
+        with open(tmp + '/' + file) as fil:
             lines = fil.readlines()
             assert lines[0] == "/******************************************************************************\n"
             assert "Code generated with SymPy " + sympy.__version__ in lines[1]
@@ -286,7 +290,7 @@ def test_autowrap_custom_printer():
 
     tmpdir = tempfile.mkdtemp()
     # write a trivial header file to use in the generated code
-    open(os.path.join(tmpdir, 'shortpi.h'), 'w').write('#define S_PI 3.14')
+    Path(os.path.join(tmpdir, 'shortpi.h')).write_text('#define S_PI 3.14')
 
     func = autowrap(expr, backend='cython', tempdir=tmpdir, code_gen=gen)
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.basic import Basic
 from sympy.core.expr import Expr
 from sympy.core.symbol import Symbol
@@ -81,19 +82,19 @@ def styleof(expr, styles=default_styles):
     Examples
     ========
 
-    >>> from sympy import Symbol, Basic, Expr
+    >>> from sympy import Symbol, Basic, Expr, S
     >>> from sympy.printing.dot import styleof
     >>> styles = [(Basic, {'color': 'blue', 'shape': 'ellipse'}),
     ...           (Expr,  {'color': 'black'})]
 
-    >>> styleof(Basic(1), styles)
+    >>> styleof(Basic(S(1)), styles)
     {'color': 'blue', 'shape': 'ellipse'}
 
     >>> x = Symbol('x')
     >>> styleof(x + 1, styles)  # this is an Expr
     {'color': 'black', 'shape': 'ellipse'}
     """
-    style = dict()
+    style = {}
     for typ, sty in styles:
         if isinstance(expr, typ):
             style.update(sty)
@@ -184,7 +185,7 @@ template = \
 _graphstyle = {'rankdir': 'TD', 'ordering': 'out'}
 
 def dotprint(expr,
-    styles=default_styles, atom=lambda x: not isinstance(x, Basic),
+    styles=None, atom=lambda x: not isinstance(x, Basic),
     maxdepth=None, repeat=True, labelfunc=str, **kwargs):
     """DOT description of a SymPy expression tree
 
@@ -247,7 +248,7 @@ def dotprint(expr,
     Examples
     ========
 
-    >>> from sympy.printing.dot import dotprint
+    >>> from sympy import dotprint
     >>> from sympy.abc import x
     >>> print(dotprint(x+2)) # doctest: +NORMALIZE_WHITESPACE
     digraph{
@@ -276,6 +277,8 @@ def dotprint(expr,
     # repeat works by adding a signature tuple to the end of each node for its
     # position in the graph. For example, for expr = Add(x, Pow(x, 2)), the x in the
     # Pow will have the tuple (1, 0), meaning it is expr.args[1].args[0].
+    if styles is None:
+        styles = default_styles
     graphstyle = _graphstyle.copy()
     graphstyle.update(kwargs)
 

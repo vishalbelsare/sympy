@@ -25,6 +25,7 @@ distributedpolys.py) is never needed in this code.
 The main reference for this file is [SCA],
 "A Singular Introduction to Commutative Algebra".
 """
+from __future__ import annotations
 
 
 from itertools import permutations
@@ -149,7 +150,7 @@ def sdm_monomial_divides(A, B):
 # The actual distributed modules code.
 
 def sdm_LC(f, K):
-    """Returns the leading coeffcient of ``f``. """
+    """Returns the leading coefficient of ``f``. """
     if not f:
         return K.zero
     else:
@@ -704,8 +705,10 @@ def sdm_groebner(G, NF, O, K, extended=False):
 
     # First add all the elements of G to S
     for i, f in enumerate(G):
+        if not f:
+            continue
         P = update(f, sdm_deg(f), P)
-        if extended and f:
+        if extended:
             coefficients.append(sdm_from_dict({(i,) + (0,)*numgens: K(1)}, O))
 
     # Now carry out the buchberger algorithm.

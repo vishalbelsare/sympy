@@ -1,14 +1,26 @@
 """Useful utilities for higher level polynomial classes. """
 
+from __future__ import annotations
 
-from sympy.core import (S, Add, Mul, Pow, Eq, Expr,
-    expand_mul, expand_multinomial)
-from sympy.core.exprtools import decompose_power, decompose_power_rat
+from typing import TYPE_CHECKING
+
+from sympy.external.gmpy import GROUND_TYPES
+
+from sympy.core import S, Add, Mul, Pow, Eq, Expr
+from sympy.core.coreerrors import NonCommutativeExpression
+from sympy.core.exprtools import (_decompose_exprs, decompose_power,
+    decompose_power_rat)
+from sympy.core.numbers import _illegal
 from sympy.polys.polyerrors import PolynomialError, GeneratorsError
 from sympy.polys.polyoptions import build_options
 
-
 import re
+
+
+if TYPE_CHECKING:
+    from sympy.polys.domains.domain import Er
+    from sympy.polys.densebasic import dup
+
 
 _gens_order = {
     'a': 301, 'b': 302, 'c': 303, 'd': 304,
@@ -35,6 +47,8 @@ def _nsort(roots, separated=False):
     """
     if not all(r.is_number for r in roots):
         raise NotImplementedError
+    if not len(roots):
+        return [] if not separated else ([], [])
     # see issue 6137:
     # get the real part of the evaluated real and imaginary parts of each root
     key = [[i.n(2).as_real_imag()[0] for i in r.as_real_imag()] for r in roots]
@@ -153,32 +167,65 @@ def _analyze_gens(gens):
 
 def _sort_factors(factors, **args):
     """Sort low-level factors in increasing 'complexity' order. """
+
+    # XXX: GF(p) does not support comparisons so we need a key function to sort
+    # the factors if python-flint is being used. A better solution might be to
+    # add a sort key method to each domain.
+    def order_key(factor):
+        if isinstance(factor, _GF_types):
+            return int(factor)
+        elif isinstance(factor, Expr):
+            return factor.sort_key()
+        elif isinstance(factor, list):
+            return [order_key(f) for f in factor]
+        else:
+            return factor
+
     def order_if_multiple_key(factor):
         (f, n) = factor
-        return (len(f), n, f)
+        return (len(f), n, order_key(f))
 
     def order_no_multiple_key(f):
-        return (len(f), f)
+        return (len(f), order_key(f))
 
     if args.get('multiple', True):
         return sorted(factors, key=order_if_multiple_key)
     else:
         return sorted(factors, key=order_no_multiple_key)
 
-illegal = [S.NaN, S.Infinity, S.NegativeInfinity, S.ComplexInfinity]
-illegal_types = [type(obj) for obj in illegal]
-finf = [float(i) for i in illegal[1:3]]
+
+def _sort_factors_single(factors: list[dup[Er]]) -> list[dup[Er]]:
+    """Sort factors of ordered domain. """
+    return sorted(factors, key=lambda f: (len(f), f))
+
+
+def _sort_factors_multiple(factors: list[tuple[dup[Er], int]]) -> list[tuple[dup[Er], int]]:
+    """Sort factors of ordered domain. """
+    def order(factor: tuple[dup[Er], int]) -> tuple[int, int, dup[Er]]:
+        (f, n) = factor
+        return (len(f), n, f)
+    return sorted(factors, key=order)
+
+
+illegal_types = [type(obj) for obj in _illegal]
+finf = [float(i) for i in _illegal[1:3]]
+
+
 def _not_a_coeff(expr):
     """Do not treat NaN and infinities as valid polynomial coefficients. """
     if type(expr) in illegal_types or expr in finf:
         return True
-    if type(expr) is float and float(expr) != expr:
+    if isinstance(expr, float) and float(expr) != expr:
         return True  # nan
     return  # could be
 
 
 def _parallel_dict_from_expr_if_gens(exprs, opt):
-    """Transform expressions into a multinomial form given generators. """
+    """Transform expressions into a multinomial form given generators.
+
+    The expressions are assumed to have been validated as commutative by
+    the caller.
+    """
     k, indices = len(opt.gens), {}
 
     for i, g in enumerate(opt.gens):
@@ -229,49 +276,55 @@ def _parallel_dict_from_expr_if_gens(exprs, opt):
 
 
 def _parallel_dict_from_expr_no_gens(exprs, opt):
-    """Transform expressions into a multinomial form and figure out generators. """
+    """Transform expressions into a multinomial form and figure out generators.
+
+    Noncommutative expressions are rejected while their factors are
+    decomposed.
+    """
     if opt.domain is not None:
-        def _is_coeff(factor):
-            return factor in opt.domain
+        def _is_coeff(f):
+            return not _not_a_coeff(f) and (f.is_Number or f in opt.domain)
     elif opt.extension is True:
-        def _is_coeff(factor):
-            return factor.is_algebraic
+        def _is_coeff(f):
+            return not _not_a_coeff(f) and (f.is_Number or f.is_algebraic)
     elif opt.greedy is not False:
-        def _is_coeff(factor):
-            return factor is S.ImaginaryUnit
+        def _is_coeff(f):
+            return not _not_a_coeff(f) and (f.is_Number or f is S.ImaginaryUnit)
     else:
-        def _is_coeff(factor):
-            return factor.is_number
+        def _is_coeff(f):
+            return not _not_a_coeff(f) and f.is_number
 
-    gens, reprs = set(), []
+    decompose = decompose_power if opt.series is False else decompose_power_rat
+    try:
+        factor_data, _ = _decompose_exprs(exprs, _is_coeff, decompose)
+    except NonCommutativeExpression:
+        raise PolynomialError('non-commutative expressions are not supported')
 
-    for expr in exprs:
-        terms = []
+    gens, polys = set(), []
 
-        if expr.is_Equality:
-            expr = expr.lhs - expr.rhs
+    for terms in factor_data:
+        poly = {}
+        terms_dict = []
 
-        for term in Add.make_args(expr):
-            coeff, elements = [], {}
+        for coeff, factors in terms:
+            term = {}
 
-            for factor in Mul.make_args(term):
-                if not _not_a_coeff(factor) and (factor.is_Number or _is_coeff(factor)):
-                    coeff.append(factor)
-                else:
-                    if opt.series is False:
-                        base, exp = decompose_power(factor)
-
-                        if exp < 0:
-                            exp, base = -exp, Pow(base, -S.One)
-                    else:
-                        base, exp = decompose_power_rat(factor)
-
-                    elements[base] = elements.setdefault(base, 0) + exp
+            for base, (pos, neg) in factors.items():
+                if pos:
+                    term[base] = term.setdefault(base, 0) + pos
                     gens.add(base)
 
-            terms.append((coeff, elements))
+                if neg:
+                    if opt.series is False:
+                        base = Pow(base, -S.One)
+                        neg = -neg
 
-        reprs.append(terms)
+                    term[base] = term.setdefault(base, 0) + neg
+                    gens.add(base)
+
+            terms_dict.append((coeff, term))
+
+        polys.append(terms_dict)
 
     gens = _sort_gens(gens, opt=opt)
     k, indices = len(gens), {}
@@ -279,9 +332,9 @@ def _parallel_dict_from_expr_no_gens(exprs, opt):
     for i, g in enumerate(gens):
         indices[g] = i
 
-    polys = []
+    result = []
 
-    for terms in reprs:
+    for terms in polys:
         poly = {}
 
         for coeff, term in terms:
@@ -297,19 +350,26 @@ def _parallel_dict_from_expr_no_gens(exprs, opt):
             else:
                 poly[monom] = Mul(*coeff)
 
-        polys.append(poly)
+        result.append(poly)
 
-    return polys, tuple(gens)
+    return result, tuple(gens)
 
 
 def _dict_from_expr_if_gens(expr, opt):
-    """Transform an expression into a multinomial form given generators. """
+    """Transform an expression into a multinomial form given generators.
+
+    The expression is assumed to have been validated as commutative by
+    the caller.
+    """
     (poly,), gens = _parallel_dict_from_expr_if_gens((expr,), opt)
     return poly, gens
 
 
 def _dict_from_expr_no_gens(expr, opt):
-    """Transform an expression into a multinomial form and figure out generators. """
+    """Transform an expression into a multinomial form and figure out generators.
+
+    Noncommutative expressions are rejected by the parallel helper.
+    """
     (poly,), gens = _parallel_dict_from_expr_no_gens((expr,), opt)
     return poly, gens
 
@@ -325,10 +385,9 @@ def _parallel_dict_from_expr(exprs, opt):
     if opt.expand is not False:
         exprs = [ expr.expand() for expr in exprs ]
 
-    if any(expr.is_commutative is False for expr in exprs):
-        raise PolynomialError('non-commutative expressions are not supported')
-
     if opt.gens:
+        if any(expr.is_commutative is False for expr in exprs):
+            raise PolynomialError('non-commutative expressions are not supported')
         reps, gens = _parallel_dict_from_expr_if_gens(exprs, opt)
     else:
         reps, gens = _parallel_dict_from_expr_no_gens(exprs, opt)
@@ -347,22 +406,10 @@ def _dict_from_expr(expr, opt):
     if expr.is_commutative is False:
         raise PolynomialError('non-commutative expressions are not supported')
 
-    def _is_expandable_pow(expr):
-        return (expr.is_Pow and expr.exp.is_positive and expr.exp.is_Integer
-                and expr.base.is_Add)
-
     if opt.expand is not False:
         if not isinstance(expr, (Expr, Eq)):
             raise PolynomialError('expression must be of type Expr')
         expr = expr.expand()
-        # TODO: Integrate this into expand() itself
-        while any(_is_expandable_pow(i) or i.is_Mul and
-            any(_is_expandable_pow(j) for j in i.args) for i in
-                Add.make_args(expr)):
-
-            expr = expand_multinomial(expr)
-        while any(i.is_Mul and any(j.is_Add for j in i.args) for i in Add.make_args(expr)):
-            expr = expand_mul(expr)
 
     if opt.gens:
         rep, gens = _dict_from_expr_if_gens(expr, opt)
@@ -470,8 +517,15 @@ class PicklableWithSlots:
 
         # Get all data that should be stored from super classes
         for c in cls.__bases__:
-            if hasattr(c, "__getstate__"):
-                d.update(c.__getstate__(self, c))
+            # XXX: Python 3.11 defines object.__getstate__ and it does not
+            # accept any arguments so we need to make sure not to call it with
+            # an argument here. To be compatible with Python < 3.11 we need to
+            # be careful not to assume that c or object has a __getstate__
+            # method though.
+            getstate = getattr(c, "__getstate__", None)
+            objstate = getattr(object, "__getstate__", None)
+            if getstate is not None and getstate is not objstate:
+                d.update(getstate(self, c))
 
         # Get all information that should be stored from cls and return the dict
         for name in cls.__slots__:
@@ -483,10 +537,7 @@ class PicklableWithSlots:
     def __setstate__(self, d):
         # All values that were pickled are now assigned to a fresh instance
         for name, value in d.items():
-            try:
-                setattr(self, name, value)
-            except AttributeError:    # This is needed in cases like Rational :> Half
-                pass
+            setattr(self, name, value)
 
 
 class IntegerPowerable:
@@ -512,7 +563,7 @@ class IntegerPowerable:
             except NotImplementedError:
                 return NotImplemented
         else:
-            bits = [int(d) for d in reversed(bin(e)[2:])]
+            bits = [int(d) for d in reversed(f'{e:b}')]
             n = len(bits)
             p = self
             first = True
@@ -546,3 +597,15 @@ class IntegerPowerable:
     def _first_power(self):
         """Return a copy of self."""
         raise NotImplementedError
+
+
+_GF_types: tuple[type, ...]
+
+
+if GROUND_TYPES == 'flint':
+    import flint
+    _GF_types = (flint.nmod, flint.fmpz_mod)
+else:
+    from sympy.polys.domains.modularinteger import ModularInteger
+    flint = None  # type: ignore[assignment]
+    _GF_types = (ModularInteger,)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from collections import defaultdict
 
 from sympy.assumptions.ask import Q
@@ -184,8 +185,7 @@ class ClassFactRegistry:
 
         handlers1, handlers2 = self[type(expr)]
 
-        for h in handlers1:
-            ret.add(h(expr))
+        ret.update(h(expr) for h in handlers1)
         for h in handlers2:
             ret.update(h(expr))
         return ret
@@ -200,7 +200,7 @@ x = Symbol('x')
 
 ## Abs ##
 
-@class_fact_registry.multiregister(Abs) # type: ignore
+@class_fact_registry.multiregister(Abs)
 def _(expr):
     arg = expr.args[0]
     return [Q.nonnegative(expr),
@@ -213,7 +213,7 @@ def _(expr):
 
 ### Add ##
 
-@class_fact_registry.multiregister(Add) # type: ignore
+@class_fact_registry.multiregister(Add)
 def _(expr):
     return [allargs(x, Q.positive(x), expr) >> Q.positive(expr),
             allargs(x, Q.negative(x), expr) >> Q.negative(expr),
@@ -223,7 +223,7 @@ def _(expr):
             exactlyonearg(x, ~Q.integer(x), expr) >> ~Q.integer(expr),
             ]
 
-@class_fact_registry.register(Add) # type: ignore
+@class_fact_registry.register(Add)
 def _(expr):
     allargs_real = allargs(x, Q.real(x), expr)
     onearg_irrational = exactlyonearg(x, Q.irrational(x), expr)
@@ -232,18 +232,19 @@ def _(expr):
 
 ### Mul ###
 
-@class_fact_registry.multiregister(Mul) # type: ignore
+@class_fact_registry.multiregister(Mul)
 def _(expr):
     return [Equivalent(Q.zero(expr), anyarg(x, Q.zero(x), expr)),
             allargs(x, Q.positive(x), expr) >> Q.positive(expr),
             allargs(x, Q.real(x), expr) >> Q.real(expr),
             allargs(x, Q.rational(x), expr) >> Q.rational(expr),
             allargs(x, Q.integer(x), expr) >> Q.integer(expr),
-            exactlyonearg(x, ~Q.rational(x), expr) >> ~Q.integer(expr),
+            (allargs(x, ~Q.zero(x), expr) &
+             exactlyonearg(x, ~Q.rational(x), expr)) >> ~Q.integer(expr),
             allargs(x, Q.commutative(x), expr) >> Q.commutative(expr),
             ]
 
-@class_fact_registry.register(Mul) # type: ignore
+@class_fact_registry.register(Mul)
 def _(expr):
     # Implicitly assumes Mul has more than one arg
     # Would be allargs(x, Q.prime(x) | Q.composite(x)) except 1 is composite
@@ -252,20 +253,22 @@ def _(expr):
     allargs_prime = allargs(x, Q.prime(x), expr)
     return Implies(allargs_prime, ~Q.prime(expr))
 
-@class_fact_registry.register(Mul) # type: ignore
+@class_fact_registry.register(Mul)
 def _(expr):
     # General Case: Odd number of imaginary args implies mul is imaginary(To be implemented)
     allargs_imag_or_real = allargs(x, Q.imaginary(x) | Q.real(x), expr)
+    allargs_not_zero = allargs(x, ~Q.zero(x), expr)
     onearg_imaginary = exactlyonearg(x, Q.imaginary(x), expr)
-    return Implies(allargs_imag_or_real, Implies(onearg_imaginary, Q.imaginary(expr)))
+    return Implies(allargs_imag_or_real & allargs_not_zero, Implies(onearg_imaginary, Q.imaginary(expr)))
 
-@class_fact_registry.register(Mul) # type: ignore
+@class_fact_registry.register(Mul)
 def _(expr):
     allargs_real = allargs(x, Q.real(x), expr)
     onearg_irrational = exactlyonearg(x, Q.irrational(x), expr)
-    return Implies(allargs_real, Implies(onearg_irrational, Q.irrational(expr)))
+    return Implies(allargs_real & allargs(x, ~Q.zero(x), expr),
+                    Implies(onearg_irrational, Q.irrational(expr)))
 
-@class_fact_registry.register(Mul) # type: ignore
+@class_fact_registry.register(Mul)
 def _(expr):
     # Including the integer qualification means we don't need to add any facts
     # for odd, since the assumptions already know that every integer is
@@ -277,7 +280,7 @@ def _(expr):
 
 ### MatMul ###
 
-@class_fact_registry.register(MatMul) # type: ignore
+@class_fact_registry.register(MatMul)
 def _(expr):
     allargs_square = allargs(x, Q.square(x), expr)
     allargs_invertible = allargs(x, Q.invertible(x), expr)
@@ -286,7 +289,7 @@ def _(expr):
 
 ### Pow ###
 
-@class_fact_registry.multiregister(Pow) # type: ignore
+@class_fact_registry.multiregister(Pow)
 def _(expr):
     base, exp = expr.base, expr.exp
     return [
@@ -312,7 +315,7 @@ _old_assump_getters = {
     Q.composite: lambda o: o.is_composite,
 }
 
-@class_fact_registry.multiregister(Number, NumberSymbol, ImaginaryUnit) # type: ignore
+@class_fact_registry.multiregister(Number, NumberSymbol, ImaginaryUnit)
 def _(expr):
     ret = []
     for p, getter in _old_assump_getters.items():

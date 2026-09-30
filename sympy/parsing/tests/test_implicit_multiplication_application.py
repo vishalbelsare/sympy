@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sympy
 from sympy.parsing.sympy_parser import (
     parse_expr,
@@ -69,7 +70,6 @@ def test_implicit_application():
                lambda: parse_expr(case, transformations=transformations2))
     raises(TypeError,
            lambda: parse_expr('sin**2(x)', transformations=transformations2))
-
 
 
 def test_function_exponentiation():
@@ -164,7 +164,6 @@ def test_all_implicit_steps():
         'pi': 'pi',  # don't mess with constants
         'None': 'None',
         'ln sin x': 'ln(sin(x))',  # multiple implicit function applications
-        'factorial': 'factorial',  # don't add parentheses
         'sin x**2': 'sin(x**2)',  # implicit application to an exponential
         'alpha': 'Symbol("alpha")',  # don't split Greek letters/subscripts
         'x_2': 'Symbol("x_2")',

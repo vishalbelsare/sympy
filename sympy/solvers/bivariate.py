@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.add import Add
 from sympy.core.exprtools import factor_terms
 from sympy.core.function import expand_log, _mexpand
@@ -31,6 +32,9 @@ def _filtered_gens(poly, symbol):
     {x, exp(x)}
 
     """
+    # TODO it would be good to pick the smallest divisible power
+    # instead of the base for something like x**4 + x**2 -->
+    # return x**2 not x
     gens = {g for g in poly.gens if symbol in g.free_symbols}
     for g in list(gens):
         ag = 1/g
@@ -55,7 +59,7 @@ def _mostfunc(lhs, func, X=None):
     ========
 
     >>> from sympy.solvers.bivariate import _mostfunc
-    >>> from sympy.functions.elementary.exponential import exp
+    >>> from sympy import exp
     >>> from sympy.abc import x, y
     >>> _mostfunc(exp(x) + exp(exp(x) + 2), exp)
     exp(exp(x) + 2)
@@ -86,10 +90,9 @@ def _linab(arg, symbol):
     Examples
     ========
 
-    >>> from sympy.functions.elementary.exponential import exp
     >>> from sympy.solvers.bivariate import _linab
     >>> from sympy.abc import x, y
-    >>> from sympy import S
+    >>> from sympy import exp, S
     >>> _linab(S(2), x)
     (2, 0, 1)
     >>> _linab(2*x, x)
@@ -153,7 +156,7 @@ def _lambert(eq, x):
 
     # There are infinitely many branches for LambertW
     # but only branches for k = -1 and 0 might be real. The k = 0
-    # branch is real and the k = -1 branch is real if the LambertW argumen
+    # branch is real and the k = -1 branch is real if the LambertW argument
     # in in range [-1/e, 0]. Since `solve` does not return infinite
     # solutions we will only include the -1 branch if it tests as real.
     # Otherwise, inclusion of any LambertW in the solution indicates to
@@ -184,8 +187,7 @@ def _lambert(eq, x):
                 continue
             rhs = -c/b + (a/d)*w
 
-            for xu in xusolns:
-                sol.append(xu.subs(u, rhs))
+            sol.extend(xu.subs(u, rhs) for xu in xusolns)
     return sol
 
 
@@ -272,7 +274,7 @@ def _solve_lambert(f, symbol, gens):
             sols.extend(_solve_lambert(plhs, symbol, gens))
         # uniq is needed for a case like
         # 2*log(t) - log(-z**2) + log(z + log(x) + log(z))
-        # where subtituting t with +/-x gives all the same solution;
+        # where substituting t with +/-x gives all the same solution;
         # uniq, rather than list(set()), is used to maintain canonical
         # order
         return list(uniq(sols))
@@ -436,7 +438,7 @@ def bivariate_type(f, x, y, *, first=True):
     Examples
     ========
 
-    >>> from sympy.solvers.solvers import solve
+    >>> from sympy import solve
     >>> from sympy.solvers.bivariate import bivariate_type
     >>> from sympy.abc import x, y
     >>> eq = (x**2 - 3).subs(x, x + y)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from itertools import product
 
 from sympy.concrete.summations import Sum
@@ -23,7 +24,7 @@ from sympy.core.random import (random_complex_number as randcplx,
                                       test_derivative_numerically as td,
                                       _randint)
 from sympy.simplify import besselsimp
-from sympy.testing.pytest import raises
+from sympy.testing.pytest import raises, slow
 
 from sympy.abc import z, n, k, x
 
@@ -54,9 +55,32 @@ def test_besselj_leading_term():
 
 
 def test_bessely_leading_term():
-    assert bessely(0, x).as_leading_term(x) == (2*log(x) - 2*log(2))/pi
-    assert bessely(1, sin(x)).as_leading_term(x) == (x*log(x) - x*log(2))/pi
-    assert bessely(1, 2*sqrt(x)).as_leading_term(x) == sqrt(x)*log(x)/pi
+    assert bessely(0, x).as_leading_term(x) == (2*log(x) - 2*log(2) + 2*S.EulerGamma)/pi
+    assert bessely(1, sin(x)).as_leading_term(x) == -2/(pi*x)
+    assert bessely(1, 2*sqrt(x)).as_leading_term(x) == -1/(pi*sqrt(x))
+
+
+def test_besseli_leading_term():
+    assert besseli(0, x).as_leading_term(x) == 1
+    assert besseli(1, sin(x)).as_leading_term(x) == x/2
+    assert besseli(1, 2*sqrt(x)).as_leading_term(x) == sqrt(x)
+
+
+def test_besselk_leading_term():
+    assert besselk(0, x).as_leading_term(x) == -log(x) - S.EulerGamma + log(2)
+    assert besselk(1, sin(x)).as_leading_term(x) == 1/x
+    assert besselk(1, 2*sqrt(x)).as_leading_term(x) == 1/(2*sqrt(x))
+    assert besselk(S(5)/3, x).as_leading_term(x) == 2**(S(2)/3)*gamma(S(5)/3)/x**(S(5)/3)
+    assert besselk(S(2)/3, x).as_leading_term(x) == besselk(-S(2)/3, x).as_leading_term(x)
+    assert besselk(1,cos(x)).as_leading_term(x) == besselk(1,1)
+    assert besselk(3,1/x).as_leading_term(x) == sqrt(pi)*exp(-(1/x))/sqrt(2/x)
+    assert besselk(3,1/sin(x)).as_leading_term(x) == sqrt(pi)*exp(-(1/x))/sqrt(2/x)
+
+    nz = Symbol("nz", nonzero=True)
+    assert besselk(nz, x).as_leading_term(x).subs({nz:S(5)/7}) == besselk(S(5)/7, x).series(x).as_leading_term(x)
+    assert besselk(nz, x).as_leading_term(x).subs({nz:S(-15)/7}) == besselk(S(-15)/7, x).series(x).as_leading_term(x)
+    assert besselk(nz, x).as_leading_term(x).subs({nz:3}) == besselk(3, x).series(x).as_leading_term(x)
+    assert besselk(nz, x).as_leading_term(x).subs({nz:-2}) == besselk(-2, x).series(x).as_leading_term(x)
 
 
 def test_besselj_series():
@@ -82,6 +106,14 @@ def test_bessely_series():
     const = 2*S.EulerGamma/pi - 2*log(2)/pi + 2*log(x)/pi
     assert bessely(0, x).series(x, n=4) == const + x**2*(-log(x)/(2*pi)\
         + (2 - 2*S.EulerGamma)/(4*pi) + log(2)/(2*pi)) + O(x**4*log(x))
+    assert bessely(1, x).series(x, n=4) == -2/(pi*x) + x*(log(x)/pi - log(2)/pi - \
+        (1 - 2*S.EulerGamma)/(2*pi)) + x**3*(-log(x)/(8*pi) + \
+        (S(5)/2 - 2*S.EulerGamma)/(16*pi) + log(2)/(8*pi)) + O(x**4*log(x))
+    assert bessely(2, x).series(x, n=4) == -4/(pi*x**2) - 1/pi + x**2*(log(x)/(4*pi) - \
+        log(2)/(4*pi) - (S(3)/2 - 2*S.EulerGamma)/(8*pi)) + O(x**4*log(x))
+    assert bessely(3, x).series(x, n=4) == -16/(pi*x**3) - 2/(pi*x) - \
+        x/(4*pi) + x**3*(log(x)/(24*pi) - log(2)/(24*pi) - \
+        (S(11)/6 - 2*S.EulerGamma)/(48*pi)) + O(x**4*log(x))
     assert bessely(0, x**(1.1)).series(x, n=4) == 2*S.EulerGamma/pi\
         - 2*log(2)/pi + 2.2*log(x)/pi + x**2.2*(-0.55*log(x)/pi\
         + (2 - 2*S.EulerGamma)/(4*pi) + log(2)/(2*pi)) + O(x**4*log(x))
@@ -95,16 +127,88 @@ def test_bessely_series():
     assert bessely(0, log(1 + x)).series(x, n=3) == const\
         - x/pi + x**2*(-log(x)/(2*pi) + (2 - 2*S.EulerGamma)/(4*pi)\
         + log(2)/(2*pi) + 5/(12*pi)) + O(x**3*log(x))
-    assert bessely(1, sin(x)).series(x, n=4) == -(1/pi)*(1 - 2*S.EulerGamma)\
-        * (-x**3/12 + x/2) + x*(log(x)/pi - log(2)/pi) + x**3*(-7*log(x)\
-        / (24*pi) - 1/(6*pi) + (Rational(5, 2) - 2*S.EulerGamma)/(16*pi)\
-        + 7*log(2)/(24*pi)) + O(x**4*log(x))
-    assert bessely(1, 2*sqrt(x)).series(x, n=3) == sqrt(x)*(log(x)/pi \
-        - (1 - 2*S.EulerGamma)/pi) + x**Rational(3, 2)*(-log(x)/(2*pi)\
-        + (Rational(5, 2) - 2*S.EulerGamma)/(2*pi))\
-        + x**Rational(5, 2)*(log(x)/(12*pi)\
-        - (Rational(10, 3) - 2*S.EulerGamma)/(12*pi)) + O(x**3*log(x))
+    assert bessely(1, sin(x)).series(x, n=4) == -1/(pi*(-x**3/12 + x/2)) - \
+        (1 - 2*S.EulerGamma)*(-x**3/12 + x/2)/pi + x*(log(x)/pi - log(2)/pi) + \
+        x**3*(-7*log(x)/(24*pi) - 1/(6*pi) + (S(5)/2 - 2*S.EulerGamma)/(16*pi) +
+        7*log(2)/(24*pi)) + O(x**4*log(x))
+    assert bessely(1, 2*sqrt(x)).series(x, n=3) == -1/(pi*sqrt(x)) + \
+        sqrt(x)*(log(x)/pi - (1 - 2*S.EulerGamma)/pi) + x**(S(3)/2)*(-log(x)/(2*pi) + \
+        (S(5)/2 - 2*S.EulerGamma)/(2*pi)) + x**(S(5)/2)*(log(x)/(12*pi) - \
+        (S(10)/3 - 2*S.EulerGamma)/(12*pi)) + O(x**3*log(x))
     assert bessely(-2, sin(x)).series(x, n=4) == bessely(2, sin(x)).series(x, n=4)
+
+
+def test_besseli_series():
+    assert besseli(0, x).series(x) == 1 + x**2/4 + x**4/64 + O(x**6)
+    assert besseli(0, x**(1.1)).series(x) == 1 + x**4.4/64 + x**2.2/4 + O(x**6)
+    assert besseli(0, x**2 + x).series(x) == 1 + x**2/4 + x**3/2 + 17*x**4/64 + \
+        x**5/16 + O(x**6)
+    assert besseli(0, sqrt(x) + x).series(x, n=4) == 1 + x/4 + 17*x**2/64 + \
+        217*x**3/2304 + x**(S(3)/2)/2 + x**(S(5)/2)/16 + 25*x**(S(7)/2)/384 + O(x**4)
+    assert besseli(0, x/(1 - x)).series(x) == 1 + x**2/4 + x**3/2 + 49*x**4/64 + \
+        17*x**5/16 + O(x**6)
+    assert besseli(0, log(1 + x)).series(x) == 1 + x**2/4 - x**3/4 + 47*x**4/192 - \
+        23*x**5/96 + O(x**6)
+    assert besseli(1, sin(x)).series(x) == x/2 - x**3/48 - 47*x**5/1920 + O(x**6)
+    assert besseli(1, 2*sqrt(x)).series(x) == sqrt(x) + x**(S(3)/2)/2 + x**(S(5)/2)/12 + \
+        x**(S(7)/2)/144 + x**(S(9)/2)/2880 + x**(S(11)/2)/86400 + O(x**6)
+    assert besseli(-2, sin(x)).series(x, n=4) == besseli(2, sin(x)).series(x, n=4)
+
+    #test for aseries
+    assert besseli(0,x).series(x, oo, n=4) == sqrt(2)*(sqrt(1/x) - (1/x)**(S(3)/2)/8 - \
+        3*(1/x)**(S(5)/2)/128 - 15*(1/x)**(S(7)/2)/1024 + O((1/x)**(S(9)/2), (x, oo)))*exp(x)/(2*sqrt(pi))
+    assert besseli(0,x).series(x,-oo, n=4) == sqrt(2)*(sqrt(-1/x) - (-1/x)**(S(3)/2)/8 - 3*(-1/x)**(S(5)/2)/128 - \
+        15*(-1/x)**(S(7)/2)/1024 + O((-1/x)**(S(9)/2), (x, -oo)))*exp(-x)/(2*sqrt(pi))
+
+
+def test_besselk_series():
+    const = log(2) - S.EulerGamma - log(x)
+    assert besselk(0, x).series(x, n=4) == const + \
+        x**2*(-log(x)/4 - S.EulerGamma/4 + log(2)/4 + S(1)/4) + O(x**4*log(x))
+    assert besselk(1, x).series(x, n=4) == 1/x + x*(log(x)/2 - log(2)/2 - \
+        S(1)/4 + S.EulerGamma/2) + x**3*(log(x)/16 - S(5)/64 - log(2)/16 + \
+        S.EulerGamma/16) + O(x**4*log(x))
+    assert besselk(2, x).series(x, n=4) == 2/x**2 - S(1)/2 + x**2*(-log(x)/8 - \
+        S.EulerGamma/8 + log(2)/8 + S(3)/32) + O(x**4*log(x))
+    assert besselk(2, x).series(x, n=1) == 2/x**2 - S(1)/2 + O(x) #edge case for series truncation
+    assert besselk(0, x**(1.1)).series(x, n=4) == log(2) - S.EulerGamma - \
+        1.1*log(x) + x**2.2*(-0.275*log(x) - S.EulerGamma/4 + \
+        log(2)/4 + S(1)/4) + O(x**4*log(x))
+    assert besselk(0, x**2 + x).series(x, n=4) == const + \
+        (2 - 2*S.EulerGamma)*(x**3/4 + x**2/8) - x + x**2*(-log(x)/4 + \
+        log(2)/4 + S(1)/2) + x**3*(-log(x)/2 - S(7)/12 + log(2)/2) + O(x**4*log(x))
+    assert besselk(0, x/(1 - x)).series(x, n=3) == const - x + x**2*(-log(x)/4 - \
+        S(1)/4 - S.EulerGamma/4 + log(2)/4) + O(x**3*log(x))
+    assert besselk(0, log(1 + x)).series(x, n=3) == const + x/2 + \
+        x**2*(-log(x)/4 - S.EulerGamma/4 + S(1)/24 + log(2)/4) + O(x**3*log(x))
+    assert besselk(1, 2*sqrt(x)).series(x, n=3) == 1/(2*sqrt(x)) + \
+        sqrt(x)*(log(x)/2 - S(1)/2 + S.EulerGamma) + x**(S(3)/2)*(log(x)/4 - S(5)/8 + \
+        S.EulerGamma/2) + x**(S(5)/2)*(log(x)/24 - S(5)/36 + S.EulerGamma/12) + O(x**3*log(x))
+    assert besselk(-2, sin(x)).series(x, n=4) == besselk(2, sin(x)).series(x, n=4)
+    assert besselk(2, x**2).series(x, n=2) == 2/x**4 - S(1)/2 + O(x**2) #edge case for series truncation
+    assert besselk(2, x**2).series(x, n=6) == 2/x**4 - S(1)/2 + x**4*(-log(x)/4 - S.EulerGamma/8 + log(2)/8 + S(3)/32) + O(x**6*log(x))
+    assert (x**2*besselk(2, x)).series(x, n=2) == 2 + O(x**2)
+
+    #test for aseries
+    assert besselk(0,x).series(x, oo, n=4) == sqrt(2)*sqrt(pi)*(sqrt(1/x) + (1/x)**(S(3)/2)/8 - \
+            3*(1/x)**(S(5)/2)/128 + 15*(1/x)**(S(7)/2)/1024 + O((1/x)**(S(9)/2), (x, oo)))*exp(-x)/2
+    assert besselk(0,x).series(x, -oo, n=4) == sqrt(2)*sqrt(pi)*(-I*sqrt(-1/x) + I*(-1/x)**(S(3)/2)/8 + \
+            3*I*(-1/x)**(S(5)/2)/128 + 15*I*(-1/x)**(S(7)/2)/1024 + O((-1/x)**(S(9)/2), (x, -oo)))*exp(-x)/2
+
+
+def test_besselk_frac_order_series():
+    assert besselk(S(5)/3, x).series(x, n=2) == 2**(S(2)/3)*gamma(S(5)/3)/x**(S(5)/3) - \
+        3*gamma(S(5)/3)*x**(S(1)/3)/(4*2**(S(1)/3)) + \
+            gamma(-S(5)/3)*x**(S(5)/3)/(4*2**(S(2)/3)) + O(x**2)
+    assert besselk(S(1)/2, x).series(x, n=2) == sqrt(pi/2)/sqrt(x) - \
+        sqrt(pi*x/2) + x**(S(3)/2)*sqrt(pi/2)/2 + O(x**2)
+    assert besselk(S(1)/2, sqrt(x)).series(x, n=2) == sqrt(pi/2)/x**(S(1)/4) - \
+        sqrt(pi/2)*x**(S(1)/4) + sqrt(pi/2)*x**(S(3)/4)/2 - \
+            sqrt(pi/2)*x**(S(5)/4)/6 + sqrt(pi/2)*x**(S(7)/4)/24 + O(x**2)
+    assert besselk(S(1)/2, x**2).series(x, n=2) == sqrt(pi/2)/x \
+        - sqrt(pi/2)*x + O(x**2)
+    assert besselk(-S(1)/2, x).series(x) == besselk(S(1)/2, x).series(x)
+    assert besselk(-S(7)/6, x).series(x) == besselk(S(7)/6, x).series(x)
 
 
 def test_diff():
@@ -248,6 +352,8 @@ def test_expand():
         assert expand_func(besselx(-oo, x)) == besselx(-oo, x, evaluate=False)
 
 
+# Quite varying time, but often really slow
+@slow
 def test_slow_expand():
     def check(eq, ans):
         return tn(eq, ans) and eq == ans
@@ -611,7 +717,9 @@ def test_airyaiprime():
                   besselj(Rational(1, 3), 2*(-t)**Rational(3, 2)/3))/3)
     assert airyaiprime(z).rewrite(besseli) == (
         z**2*besseli(Rational(2, 3), 2*z**Rational(3, 2)/3)/(3*(z**Rational(3, 2))**Rational(2, 3)) -
-        (z**Rational(3, 2))**Rational(2, 3)*besseli(Rational(-1, 3), 2*z**Rational(3, 2)/3)/3)
+        (z**Rational(3, 2))**Rational(2, 3)*besseli(Rational(-2, 3), 2*z**Rational(3, 2)/3)/3)
+    # issue 30349
+    assert tn(airyaiprime(z), airyaiprime(z).rewrite(besseli), z)
     assert airyaiprime(p).rewrite(besseli) == (
         p*(-besseli(Rational(-2, 3), 2*p**Rational(3, 2)/3) + besseli(Rational(2, 3), 2*p**Rational(3, 2)/3))/3)
 
@@ -694,3 +802,9 @@ def test_marcumq():
 
     x = Symbol('x', integer=True)
     assert marcumq(x, a, a).rewrite(besseli) == marcumq(x, a, a)
+
+
+def test_issue_26134():
+    x = Symbol('x')
+    assert marcumq(2, 3, 4).rewrite(Integral, x=x).dummy_eq(
+        Integral(x**2*exp(-x**2/2 - Rational(9, 2))*besseli(1, 3*x), (x, 4, oo))/3)

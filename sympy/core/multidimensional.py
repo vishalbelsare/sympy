@@ -3,6 +3,7 @@ Provides functionality for multidimensional usage of scalar-functions.
 
 Read the vectorize docstring for more details.
 """
+from __future__ import annotations
 
 from functools import wraps
 
@@ -41,13 +42,7 @@ def iter_copy(structure):
     """
     Returns a copy of an iterable object (also copying all embedded iterables).
     """
-    l = []
-    for i in structure:
-        if hasattr(i, "__iter__"):
-            l.append(iter_copy(i))
-        else:
-            l.append(i)
-    return l
+    return [iter_copy(i) if hasattr(i, "__iter__") else i for i in structure]
 
 
 def structure_copy(structure):
@@ -95,6 +90,14 @@ class vectorize:
             if not isinstance(a, (int, str)):
                 raise TypeError("a is of invalid type")
         self.mdargs = mdargs
+
+    def __eq__(self, other):
+        if not isinstance(other, vectorize):
+            return NotImplemented
+        return self.mdargs == other.mdargs
+
+    def __hash__(self):
+        return hash((type(self), self.mdargs))
 
     def __call__(self, f):
         """

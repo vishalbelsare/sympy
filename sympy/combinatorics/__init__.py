@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.combinatorics.permutations import Permutation, Cycle
 from sympy.combinatorics.prufer import Prufer
 from sympy.combinatorics.generators import cyclic, alternating, symmetric, dihedral
@@ -12,6 +13,8 @@ from sympy.combinatorics.graycode import GrayCode
 from sympy.combinatorics.named_groups import (SymmetricGroup, DihedralGroup,
     CyclicGroup, AlternatingGroup, AbelianGroup, RubikGroup)
 from sympy.combinatorics.pc_groups import PolycyclicGroup, Collector
+from sympy.combinatorics.free_groups import free_group
+from sympy.combinatorics.character_table import CharacterTable
 
 __all__ = [
     'Permutation', 'Cycle',
@@ -37,4 +40,8 @@ __all__ = [
     'AbelianGroup', 'RubikGroup',
 
     'PolycyclicGroup', 'Collector',
+
+    'free_group',
+
+    'CharacterTable',
 ]

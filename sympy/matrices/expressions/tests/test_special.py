@@ -1,16 +1,17 @@
+from __future__ import annotations
 from sympy.core.add import Add
 from sympy.core.expr import unchanged
 from sympy.core.mul import Mul
 from sympy.core.symbol import symbols
 from sympy.core.relational import Eq
 from sympy.concrete.summations import Sum
+from sympy.functions.elementary.complexes import im, re
 from sympy.functions.elementary.piecewise import Piecewise
-from sympy.matrices.common import NonSquareMatrixError, ShapeError
 from sympy.matrices.immutable import ImmutableDenseMatrix
 from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.matrices.expressions.matadd import MatAdd
 from sympy.matrices.expressions.special import (
-    ZeroMatrix, GenericZeroMatrix, Identity, GenericIdentity, OneMatrix)
+    ZeroMatrix, GenericZeroMatrix, Identity, GenericIdentity, OneMatrix, MatrixUnit)
 from sympy.matrices.expressions.matmul import MatMul
 from sympy.testing.pytest import raises
 
@@ -110,7 +111,6 @@ def test_one_matrix_creation():
     raises(ValueError, lambda: OneMatrix(n, n))
 
 
-
 def test_ZeroMatrix():
     n, m = symbols('n m', integer=True)
     A = MatrixSymbol('A', n, m)
@@ -125,15 +125,11 @@ def test_ZeroMatrix():
 
     assert Z.transpose() == ZeroMatrix(m, n)
     assert Z.conjugate() == Z
+    assert Z.adjoint() == ZeroMatrix(m, n)
+    assert re(Z) == Z
+    assert im(Z) == Z
 
     assert ZeroMatrix(n, n)**0 == Identity(n)
-    with raises(NonSquareMatrixError):
-        Z**0
-    with raises(NonSquareMatrixError):
-        Z**1
-    with raises(NonSquareMatrixError):
-        Z**2
-
     assert ZeroMatrix(3, 3).as_explicit() == ImmutableDenseMatrix.zeros(3, 3)
 
 
@@ -148,23 +144,17 @@ def test_ZeroMatrix_doit():
 def test_OneMatrix():
     n, m = symbols('n m', integer=True)
     A = MatrixSymbol('A', n, m)
-    a = MatrixSymbol('a', n, 1)
     U = OneMatrix(n, m)
 
     assert U.shape == (n, m)
     assert isinstance(A + U, Add)
     assert U.transpose() == OneMatrix(m, n)
     assert U.conjugate() == U
+    assert U.adjoint() == OneMatrix(m, n)
+    assert re(U) == U
+    assert im(U) == ZeroMatrix(n, m)
 
     assert OneMatrix(n, n) ** 0 == Identity(n)
-    with raises(NonSquareMatrixError):
-        U ** 0
-    with raises(NonSquareMatrixError):
-        U ** 1
-    with raises(NonSquareMatrixError):
-        U ** 2
-    with raises(ShapeError):
-        a + U
 
     U = OneMatrix(n, n)
     assert U[1, 2] == 1
@@ -189,6 +179,25 @@ def test_OneMatrix_mul():
     assert OneMatrix(1, 1) * w.T == w.T
 
 
+def test_MatrixUnit():
+    mu = MatrixUnit(3, 3, 1, 2)
+
+    assert mu.as_explicit() == ImmutableDenseMatrix([[0, 0, 0], [0, 0, 1], [0, 0, 0]])
+    assert mu.T == MatrixUnit(3, 3, 2, 1)
+    assert mu.free_symbols == set()
+    assert mu.shape == (3, 3)
+    assert mu.rows == 3
+    assert mu.cols == 3
+
+    ma = MatrixUnit(3, 4, 1, 2)
+    assert ma.transpose() == ma.T == MatrixUnit(4, 3, 2, 1)
+    assert ma.adjoint() == MatrixUnit(4, 3, 2, 1)
+    assert ma.conjugate() == ma
+    assert ma.shape == (3, 4)
+    assert ma.rows == 3
+    assert ma.cols == 4
+
+
 def test_Identity():
     n, m = symbols('n m', integer=True)
     A = MatrixSymbol('A', n, m)
@@ -203,6 +212,9 @@ def test_Identity():
     assert In.transpose() == In
     assert In.inverse() == In
     assert In.conjugate() == In
+    assert In.adjoint() == In
+    assert re(In) == In
+    assert im(In) == ZeroMatrix(n, n)
 
     assert In[i, j] != 0
     assert Sum(In[i, j], (i, 0, n-1), (j, 0, n-1)).subs(n,3).doit() == 3

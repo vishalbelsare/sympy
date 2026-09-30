@@ -1,13 +1,13 @@
+from __future__ import annotations
 import inspect
 import copy
 import pickle
 
 from sympy.physics.units import meter
 
-from sympy.testing.pytest import XFAIL, raises
+from sympy.testing.pytest import XFAIL, raises, ignore_warnings
 
 from sympy.core.basic import Atom, Basic
-from sympy.core.core import BasicMeta
 from sympy.core.singleton import SingletonRegistry
 from sympy.core.symbol import Str, Dummy, Symbol, Wild
 from sympy.core.numbers import (E, I, pi, oo, zoo, nan, Integer,
@@ -22,7 +22,7 @@ from sympy.core.function import Derivative, Function, FunctionClass, Lambda, \
 from sympy.sets.sets import Interval
 from sympy.core.multidimensional import vectorize
 
-from sympy.external.gmpy import HAS_GMPY
+from sympy.external.gmpy import gmpy as _gmpy
 from sympy.utilities.exceptions import SymPyDeprecationWarning
 
 from sympy.core.singleton import S
@@ -31,17 +31,24 @@ from sympy.core.symbol import symbols
 from sympy.external import import_module
 cloudpickle = import_module('cloudpickle')
 
-excluded_attrs = {
+
+not_equal_attrs = {
     '_assumptions',  # This is a local cache that isn't automatically filled on creation
     '_mhash',   # Cached after __hash__ is called but set to None after creation
+}
+
+
+deprecated_attrs = {
     'is_EmptySet',  # Deprecated from SymPy 1.5. This can be removed when is_EmptySet is removed.
     'expr_free_symbols',  # Deprecated from SymPy 1.9. This can be removed when exr_free_symbols is removed.
-    '_mat', # Deprecated from SymPy 1.9. This can be removed when Matrix._mat is removed
-    '_smat', # Deprecated from SymPy 1.9. This can be removed when SparseMatrix._smat is removed
-    }
+}
+
+dont_check_attrs = {
+    '_sage_',  # Fails because Sage is not installed
+}
 
 
-def check(a, exclude=[], check_attr=True):
+def check(a, exclude=[], check_attr=True, deprecated=()):
     """ Check that pickling and copying round-trips.
     """
     # Pickling with protocols 0 and 1 is disabled for Basic instances:
@@ -58,7 +65,7 @@ def check(a, exclude=[], check_attr=True):
             continue
 
         if callable(protocol):
-            if isinstance(a, BasicMeta):
+            if isinstance(a, type):
                 # Classes can't be copied, but that's okay.
                 continue
             b = protocol(a)
@@ -71,19 +78,29 @@ def check(a, exclude=[], check_attr=True):
         d2 = dir(b)
         assert set(d1) == set(d2)
 
+        # Everything should compare equal to itself after a round-trip.
+        assert a == b, "%r != %r, protocol: %s" % (a, b, protocol)
+
         if not check_attr:
             continue
 
         def c(a, b, d):
             for i in d:
-                if i in excluded_attrs:
+                if i in dont_check_attrs:
                     continue
-                if not hasattr(a, i):
+                elif i in not_equal_attrs:
+                    if hasattr(a, i):
+                        assert hasattr(b, i), i
+                elif i in deprecated_attrs or i in deprecated:
+                    with ignore_warnings(SymPyDeprecationWarning):
+                        assert getattr(a, i) == getattr(b, i), i
+                elif not hasattr(a, i):
                     continue
-                attr = getattr(a, i)
-                if not hasattr(attr, "__call__"):
-                    assert hasattr(b, i), i
-                    assert getattr(b, i) == attr, "%s != %s, protocol: %s" % (getattr(b, i), attr, protocol)
+                else:
+                    attr = getattr(a, i)
+                    if not hasattr(attr, "__call__"):
+                        assert hasattr(b, i), i
+                        assert getattr(b, i) == attr, "%s != %s, protocol: %s" % (getattr(b, i), attr, protocol)
 
         c(a, b, d1)
         c(b, a, d2)
@@ -94,11 +111,7 @@ def check(a, exclude=[], check_attr=True):
 
 
 def test_core_basic():
-    for c in (Atom, Atom(),
-              Basic, Basic(),
-              # XXX: dynamically created types are not picklable
-              # BasicMeta, BasicMeta("test", (), {}),
-              SingletonRegistry, S):
+    for c in (Atom, Atom(), Basic, Basic(), SingletonRegistry, S):
         check(c)
 
 def test_core_Str():
@@ -163,18 +176,13 @@ def test_core_function():
 
 def test_core_undefinedfunctions():
     f = Function("f")
-    # Full XFAILed test below
-    exclude = list(range(5))
-    # https://github.com/cloudpipe/cloudpickle/issues/65
-    # https://github.com/cloudpipe/cloudpickle/issues/190
-    exclude.append(cloudpickle)
-    check(f, exclude=exclude)
-
-@XFAIL
-def test_core_undefinedfunctions_fail():
-    # This fails because f is assumed to be a class at sympy.basic.function.f
-    f = Function("f")
     check(f)
+
+
+def test_core_appliedundef():
+    x = Symbol("_long_unique_name_1")
+    f = Function("_long_unique_name_2")
+    check(f(x))
 
 
 def test_core_interval():
@@ -201,6 +209,22 @@ def test_Singletons():
         for func in copiers:
             assert func(obj) is obj
 
+#================== combinatorics ===================
+from sympy.combinatorics.free_groups import FreeGroup
+from sympy.combinatorics.permutations import Permutation
+
+def test_free_group():
+    check(FreeGroup("x, y, z"), check_attr=False)
+
+def test_Permutation():
+    #fails with check_attr=True because Permutation uses attributes to cache properties (e.g. _cyclic_form)
+    check(Permutation([0,3,2,1,4]), check_attr=False)
+
+    p = Permutation(S(2))(0,1)
+    check(p, check_attr=False)
+
+    p2 = Permutation(p.array_form + [S(4),S(3)])
+    check(p2, check_attr=False)
 
 #================== functions ===================
 from sympy.functions import (Piecewise, lowergamma, acosh, chebyshevu,
@@ -280,7 +304,7 @@ from sympy.matrices import Matrix, SparseMatrix
 
 def test_matrices():
     for c in (Matrix, Matrix([1, 2, 3]), SparseMatrix, SparseMatrix([[1, 2], [3, 4]])):
-        check(c)
+        check(c, deprecated=['_smat', '_mat'])
 
 #================== ntheory =====================
 from sympy.ntheory.generate import Sieve
@@ -378,7 +402,7 @@ def test_pickling_polys_polyclasses():
     from sympy.polys.polyclasses import DMP, DMF, ANP
 
     for c in (DMP, DMP([[ZZ(1)], [ZZ(2)], [ZZ(3)]], ZZ)):
-        check(c)
+        check(c, deprecated=['rep'])
     for c in (DMF, DMF(([ZZ(1), ZZ(2)], [ZZ(1), ZZ(3)]), ZZ)):
         check(c)
     for c in (ANP, ANP([QQ(1), QQ(2)], [QQ(1), QQ(2), QQ(3)], QQ)):
@@ -455,7 +479,7 @@ def test_pickling_polys_domains():
     for c in (PythonRationalField, PythonRationalField()):
         check(c, check_attr=False)
 
-    if HAS_GMPY:
+    if _gmpy is not None:
         # from sympy.polys.domains.gmpyfinitefield import GMPYFiniteField
         from sympy.polys.domains.gmpyintegerring import GMPYIntegerRing
         from sympy.polys.domains.gmpyrationalfield import GMPYRationalField
@@ -670,7 +694,6 @@ def test_printing2():
     check(MathMLPresentationPrinter())
 
 
-@XFAIL
 def test_printing3():
     check(PrettyPrinter())
 
@@ -696,8 +719,46 @@ def test_concrete():
         check(c)
 
 def test_deprecation_warning():
-    w = SymPyDeprecationWarning('value', 'feature', issue=12345, deprecated_since_version='1.0')
+    w = SymPyDeprecationWarning("message", deprecated_since_version='1.0', active_deprecations_target="active-deprecations")
     check(w)
 
 def test_issue_18438():
-    assert pickle.loads(pickle.dumps(S.Half)) == 1/2
+    assert pickle.loads(pickle.dumps(S.Half)) == S.Half
+
+#================= tensor ======================
+import sympy.tensor.tensor as tens
+from sympy.combinatorics.tensor_can import get_symmetric_group_sgs
+
+def test_get_symmetric_group_sgs():
+    base, sgs = get_symmetric_group_sgs(S(3), antisym=True)
+    check(base, check_attr=False)
+    check(sgs, check_attr=False)
+
+def test_TensorSymmetry():
+    t = tens.TensorSymmetry.fully_symmetric(-S(3))
+    check(t, check_attr=False)
+
+def test_TensorHead():
+    R3 = tens.TensorIndexType("R", dim=3)
+    check(R3.epsilon, check_attr=False)
+
+def test_TensorHead_2():
+    R3 = tens.TensorIndexType("R", dim=3)
+    K = tens.TensorHead("K", [R3,R3,R3])
+    check(K, check_attr=False)
+
+def test_epsilon():
+    R3 = tens.TensorIndexType("R", dim=3)
+    i, j, k = tens.tensor_indices("i j k", R3)
+
+    check(R3.epsilon(i,j,k), check_attr=False)
+
+#================= old pickles =================
+def test_unpickle_from_older_versions():
+    data = (
+        b'\x80\x04\x95^\x00\x00\x00\x00\x00\x00\x00\x8c\x10sympy.core.power'
+        b'\x94\x8c\x03Pow\x94\x93\x94\x8c\x12sympy.core.numbers\x94\x8c'
+        b'\x07Integer\x94\x93\x94K\x02\x85\x94R\x94}\x94bh\x03\x8c\x04Half'
+        b'\x94\x93\x94)R\x94}\x94b\x86\x94R\x94}\x94b.'
+    )
+    assert pickle.loads(data) == sqrt(2)

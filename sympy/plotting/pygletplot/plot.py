@@ -1,3 +1,4 @@
+from __future__ import annotations
 from threading import RLock
 
 # it is sufficient to import "pyglet" here once
@@ -5,7 +6,7 @@ try:
     import pyglet.gl as pgl
 except ImportError:
     raise ImportError("pyglet is required for plotting.\n "
-                      "visit http://www.pyglet.org/")
+                      "visit https://pyglet.org/")
 
 from sympy.core.numbers import Integer
 from sympy.external.gmpy import SYMPY_INTS
@@ -314,7 +315,7 @@ class PygletPlot:
                 args = [args]
             if len(args) == 0:
                 return  # no arguments given
-            kwargs = dict(bounds_callback=self.adjust_all_bounds)
+            kwargs = {"bounds_callback": self.adjust_all_bounds}
             f = PlotMode(*args, **kwargs)
 
         if f:
@@ -363,7 +364,7 @@ class PygletPlot:
         """
         Allows iteration of the function list.
         """
-        return self._functions.itervalues()
+        return iter(self._functions.values())
 
     def __repr__(self):
         return str(self)

@@ -1,6 +1,7 @@
 """
 AST nodes specific to the C family of languages
 """
+from __future__ import annotations
 
 from sympy.codegen.ast import (
     Attribute, Declaration, Node, String, Token, Type, none,
@@ -58,7 +59,7 @@ class Label(Node):
     ++(a);
 
     """
-    __slots__ = ('name', 'body')
+    __slots__ = _fields = ('name', 'body')
     defaults = {'body': none}
     _construct_name = String
 
@@ -72,7 +73,7 @@ class Label(Node):
 
 class goto(Token):
     """ Represents goto in C """
-    __slots__ = ('label',)
+    __slots__ = _fields = ('label',)
     _construct_label = Label
 
 
@@ -93,23 +94,56 @@ class PreDecrement(Basic):
 
 
 class PostDecrement(Basic):
-    """ Represents the post-decrement operator """
+    """ Represents the post-decrement operator
+
+    Examples
+    ========
+
+    >>> from sympy.abc import x
+    >>> from sympy.codegen.cnodes import PostDecrement
+    >>> from sympy import ccode
+    >>> ccode(PostDecrement(x))
+    '(x)--'
+
+    """
     nargs = 1
 
 
 class PreIncrement(Basic):
-    """ Represents the pre-increment operator """
+    """ Represents the pre-increment operator
+
+    Examples
+    ========
+
+    >>> from sympy.abc import x
+    >>> from sympy.codegen.cnodes import PreIncrement
+    >>> from sympy import ccode
+    >>> ccode(PreIncrement(x))
+    '++(x)'
+
+    """
     nargs = 1
 
 
 class PostIncrement(Basic):
-    """ Represents the post-increment operator """
+    """ Represents the post-increment operator
+
+    Examples
+    ========
+
+    >>> from sympy.abc import x
+    >>> from sympy.codegen.cnodes import PostIncrement
+    >>> from sympy import ccode
+    >>> ccode(PostIncrement(x))
+    '(x)++'
+
+    """
     nargs = 1
 
 
 class struct(Node):
     """ Represents a struct in C """
-    __slots__ = ('name', 'declarations')
+    __slots__ = _fields = ('name', 'declarations')
     defaults = {'name': none}
     _construct_name = String
 
@@ -120,3 +154,4 @@ class struct(Node):
 
 class union(struct):
     """ Represents a union in C """
+    __slots__ = ()

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.external import import_module
 
 lfortran = import_module('lfortran')
@@ -45,8 +46,8 @@ if lfortran:
     LFortran : Required to parse Fortran source code into ASR
 
 
-    Refrences
-    =========
+    References
+    ==========
 
     .. [1] https://github.com/sympy/sympy/issues
     .. [2] https://gitlab.com/lfortran/lfortran
@@ -99,7 +100,7 @@ if lfortran:
             NotImplementedError() when called for Numeric assignments or Arrays
 
             """
-            # TODO: Arithmatic Assignment
+            # TODO: Arithmetic Assignment
             if isinstance(node.target, asr.Variable):
                 target = node.target
                 value = node.value

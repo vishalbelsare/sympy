@@ -1,14 +1,18 @@
 #!/usr/bin/env python
 
 import os
+import stat
 import json
 from subprocess import check_output
 from collections import OrderedDict, defaultdict
 from collections.abc import Mapping
 import glob
 from contextlib import contextmanager
+from getpass import getpass
+from pathlib import Path
 
 import requests
+from requests.auth import HTTPBasicAuth
 from requests_oauthlib import OAuth2
 
 
@@ -145,13 +149,14 @@ def get_sympy_short_version(version):
     (like 0.7.3)
     """
     parts = version.split('.')
-    # Remove rc tags
-    # Handle both 1.0.rc1 and 1.1rc1
-    if not parts[-1].isdigit():
-        if parts[-1][0].isdigit():
-            parts[-1] = parts[-1][0]
+    # Remove rc tags e.g. 1.10rc1 -> [1, 10]
+    lastpart = ''
+    for dig in parts[-1]:
+        if dig.isdigit():
+            lastpart += dig
         else:
-            parts.pop(-1)
+            break
+    parts[-1] = lastpart
     return '.'.join(parts)
 
 
@@ -318,8 +323,8 @@ def query_GitHub(url, username=None, password=None, token=None, data=None,
         headers['X-GitHub-OTP'] = OTP
 
     if token:
-        auth = OAuth2(client_id=username, token=dict(access_token=token,
-            token_type='bearer'))
+        auth = OAuth2(client_id=username, token={"access_token": token,
+            "token_type": 'bearer'})
     else:
         auth = HTTPBasicAuth(username, password)
     if data:
@@ -353,8 +358,7 @@ def save_token_file(token):
     try:
         if not os.path.isdir(token_folder):
             os.mkdir(token_folder, 0o700)
-        with open(token_file_expand, 'w') as f:
-            f.write(token + '\n')
+        Path(token_file_expand).write_text(token + '\n')
         os.chmod(token_file_expand, stat.S_IREAD | stat.S_IWRITE)
     except OSError as e:
         print("> Unable to create folder for token file: ", e)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.combinatorics.permutations import Permutation, _af_rmul, \
     _af_invert, _af_new
 from sympy.combinatorics.perm_groups import PermutationGroup, _orbit, \
@@ -85,12 +86,7 @@ def _min_dummies(dummies, sym, indices):
     [0, 1, 2, 2, 2, 2, 2, 2, 8, 9]
     """
     num_types = len(sym)
-    m = []
-    for dx in dummies:
-        if dx:
-            m.append(min(dx))
-        else:
-            m.append(None)
+    m = [min(dx) if dx else None for dx in dummies]
     res = indices[:]
     for i in range(num_types):
         for c, i in enumerate(indices):
@@ -436,7 +432,7 @@ def double_coset_can_rep(dummies, sym, b_S, sgens, S_transversals, g):
             md = [min(_orbit(size, [_af_new(
                 ddx) for ddx in dsgsx], ii)) for ii in range(size - 2)]
 
-        p_i = min([min([md[h[x]] for x in deltab]) for s, d, h in TAB])
+        p_i = min(min(md[h[x]] for x in deltab) for s, d, h in TAB)
         dsgsx1 = [_af_new(_) for _ in dsgsx]
         Dxtrav = _orbit_transversal(size, dsgsx1, p_i, False, af=True) \
             if dsgsx else None
@@ -459,7 +455,7 @@ def double_coset_can_rep(dummies, sym, b_S, sgens, S_transversals, g):
         TAB1 = []
         while TAB:
             s, d, h = TAB.pop()
-            if min([md[h[x]] for x in deltab]) != p_i:
+            if min(md[h[x]] for x in deltab) != p_i:
                 continue
             deltab1 = [x for x in deltab if md[h[x]] == p_i]
             # NEXT = s*deltab1 intersection (d*g)**-1*deltap
@@ -593,7 +589,7 @@ def canonical_free(base, gens, g, num_free):
         if x not in base:
             base.append(x)
     h = g
-    for i, transv in enumerate(transversals):
+    for transv in transversals:
         h_i = [size]*num_free
         # find the element s in transversals[i] such that
         # _af_rmul(h, s) has its free elements with the lowest position in h
@@ -623,8 +619,7 @@ def _get_map_slots(size, fixed_slots):
 def _lift_sgens(size, fixed_slots, free, s):
     a = []
     j = k = 0
-    fd = list(zip(fixed_slots, free))
-    fd = [y for x, y in sorted(fd)]
+    fd = [y for _, y in sorted(zip(fixed_slots, free))]
     num_free = len(free)
     for i in range(size):
         if i in fixed_slots:
@@ -776,8 +771,7 @@ def canonicalize(g, dummies, msym, *v):
     size = g.size
     num_tensors = 0
     v1 = []
-    for i in range(len(v)):
-        base_i, gens_i, n_i, sym_i = v[i]
+    for base_i, gens_i, n_i, sym_i in v:
         # check that the BSGS is minimal;
         # this property is used in double_coset_can_rep;
         # if it is not minimal use canonicalize_naive
@@ -819,9 +813,8 @@ def canonicalize(g, dummies, msym, *v):
     # Determine free_i, the list of slots of tensors which are fixed
     # since they are occupied by free indices, which are fixed.
     start = 0
-    for i in range(len(v)):
+    for i, (base_i, gens_i, n_i, sym_i) in enumerate(v):
         free_i = []
-        base_i, gens_i, n_i, sym_i = v[i]
         len_tens = gens_i[0].size - 2
         # for each component tensor get a list od fixed islots
         for j in range(n_i):
@@ -945,8 +938,8 @@ def get_symmetric_group_sgs(n, antisym=False):
     Parameters
     ==========
 
-    ``n``: rank of the tensor
-    ``antisym`` : bool
+    n : rank of the tensor
+    antisym : bool
         ``antisym = False`` symmetric tensor
         ``antisym = True``  antisymmetric tensor
 
@@ -958,14 +951,14 @@ def get_symmetric_group_sgs(n, antisym=False):
     ([0, 1], [(4)(0 1), (4)(1 2)])
     """
     if n == 1:
-        return [], [_af_new(list(range(3)))]
+        return [], [Permutation(list(range(3)))]
     gens = [Permutation(n - 1)(i, i + 1)._array_form for i in range(n - 1)]
     if antisym == 0:
         gens = [x + [n, n + 1] for x in gens]
     else:
         gens = [x + [n + 1, n] for x in gens]
     base = list(range(n - 1))
-    return base, [_af_new(h) for h in gens]
+    return base, [Permutation(h) for h in gens]
 
 riemann_bsgs = [0, 2], [Permutation(0, 1)(4, 5), Permutation(2, 3)(4, 5),
                         Permutation(5)(0, 2)(1, 3)]

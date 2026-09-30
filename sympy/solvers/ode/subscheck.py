@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core import S, Pow
 from sympy.core.function import (Derivative, AppliedUndef, diff)
 from sympy.core.relational import Equality, Eq
@@ -351,8 +352,7 @@ def checksysodesol(eqs, sols, func=None):
         for eq in eqs:
             derivs = eq.atoms(Derivative)
             func = set().union(*[d.atoms(AppliedUndef) for d in derivs])
-            for func_ in  func:
-                funcs.append(func_)
+            funcs.extend(func)
         funcs = list(set(funcs))
     if not all(isinstance(func, AppliedUndef) and len(func.args) == 1 for func in funcs)\
     and len({func.args for func in funcs})!=1:
@@ -362,7 +362,7 @@ def checksysodesol(eqs, sols, func=None):
             raise ValueError("solutions should have one function only")
     if len(funcs) != len({sol.lhs for sol in sols}):
         raise ValueError("number of solutions provided does not match the number of equations")
-    dictsol = dict()
+    dictsol = {}
     for sol in sols:
         func = list(sol.atoms(AppliedUndef))[0]
         if sol.rhs == func:

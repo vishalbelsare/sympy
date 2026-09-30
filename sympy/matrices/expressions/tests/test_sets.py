@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.singleton import S
 from sympy.core.symbol import symbols
 from sympy.matrices import Matrix
@@ -5,6 +6,9 @@ from sympy.matrices.expressions.matexpr import MatrixSymbol
 from sympy.matrices.expressions.sets import MatrixSet
 from sympy.matrices.expressions.special import ZeroMatrix
 from sympy.testing.pytest import raises
+from sympy.sets.sets import SetKind
+from sympy.matrices.kind import MatrixKind
+from sympy.core.kind import NumberKind
 
 
 def test_MatrixSet():
@@ -33,3 +37,7 @@ def test_MatrixSet():
     raises(ValueError, lambda: MatrixSet(2, -2, S.Reals))
     raises(ValueError, lambda: MatrixSet(2.4, -1, S.Reals))
     raises(TypeError, lambda: MatrixSet(2, 2, (1, 2, 3)))
+
+
+def test_SetKind_MatrixSet():
+    assert MatrixSet(2, 2, set=S.Reals).kind is SetKind(MatrixKind(NumberKind))

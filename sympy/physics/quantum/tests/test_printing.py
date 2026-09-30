@@ -3,7 +3,8 @@
 TODO:
 * Address Issue 2251, printing of spin states
 """
-from typing import Dict as tDict, Any
+from __future__ import annotations
+from typing import Any
 
 from sympy.physics.quantum.anticommutator import AntiCommutator
 from sympy.physics.quantum.cg import CG, Wigner3j, Wigner6j, Wigner9j
@@ -40,7 +41,7 @@ from sympy.printing.latex import latex
 MutableDenseMatrix = Matrix
 
 
-ENV = {}  # type: tDict[str, Any]
+ENV: dict[str, Any] = {}
 exec('from sympy import *', ENV)
 exec('from sympy.physics.quantum import *', ENV)
 exec('from sympy.physics.quantum.cg import *', ENV)
@@ -219,7 +220,7 @@ def test_constants():
 
 
 def test_dagger():
-    x = symbols('x')
+    x = symbols('x', commutative=False)
     expr = Dagger(x)
     assert str(expr) == 'Dagger(x)'
     ascii_str = \
@@ -235,7 +236,7 @@ x \
     assert pretty(expr) == ascii_str
     assert upretty(expr) == ucode_str
     assert latex(expr) == r'x^{\dagger}'
-    sT(expr, "Dagger(Symbol('x'))")
+    sT(expr, "Dagger(Symbol('x', commutative=False))")
 
 
 @XFAIL
@@ -302,7 +303,7 @@ CNOT   \n\
 """
     assert pretty(g3) == ascii_str
     assert upretty(g3) == ucode_str
-    assert latex(g3) == r'CNOT_{1,0}'
+    assert latex(g3) == r'\text{CNOT}_{1,0}'
     sT(g3, "CNotGate(Integer(1),Integer(0))")
     ascii_str = \
 """\
@@ -798,12 +799,16 @@ def test_state():
 
 def test_tensorproduct():
     tp = TensorProduct(JzKet(1, 1), JzKet(1, 0))
-    assert str(tp) == '|1,1>x|1,0>'
-    assert pretty(tp) == '|1,1>x |1,0>'
-    assert upretty(tp) == '❘1,1⟩⨂ ❘1,0⟩'
-    assert latex(tp) == \
-        r'{{\left|1,1\right\rangle }}\otimes {{\left|1,0\right\rangle }}'
+    assert str(tp) == '|1,1>|1,0>'
+    assert pretty(tp) == '|1,1>|1,0>'
+    assert upretty(tp) == '❘1,1⟩❘1,0⟩'
+    assert latex(tp) == r'{{\left|1,1\right\rangle }}{{\left|1,0\right\rangle }}'
     sT(tp, "TensorProduct(JzKet(Integer(1),Integer(1)), JzKet(Integer(1),Integer(0)))")
+    tp = TensorProduct(Operator('A'), Operator('B'))
+    assert str(tp) == 'AxB'
+    assert pretty(tp) == 'Ax B'
+    assert upretty(tp) == 'A⨂ B'
+    assert latex(tp) == r'{A}\otimes {B}'
 
 
 def test_big_expr():

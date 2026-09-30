@@ -1,7 +1,8 @@
+from __future__ import annotations
 from sympy.core.sympify import _sympify
 from sympy.core import S, Basic
 
-from sympy.matrices.common import NonSquareMatrixError
+from sympy.matrices.exceptions import NonSquareMatrixError
 from sympy.matrices.expressions.matpow import MatPow
 
 
@@ -39,7 +40,7 @@ class Inverse(MatPow):
         exp = _sympify(exp)
         if not mat.is_Matrix:
             raise TypeError("mat should be a matrix")
-        if not mat.is_square:
+        if mat.is_square is False:
             raise NonSquareMatrixError("Inverse of non-square matrix %s" % mat)
         return Basic.__new__(cls, mat, exp)
 
@@ -54,6 +55,15 @@ class Inverse(MatPow):
     def _eval_inverse(self):
         return self.arg
 
+    def _eval_transpose(self):
+        return Inverse(self.arg.transpose())
+
+    def _eval_adjoint(self):
+        return Inverse(self.arg.adjoint())
+
+    def _eval_conjugate(self):
+        return Inverse(self.arg.conjugate())
+
     def _eval_determinant(self):
         from sympy.matrices.expressions.determinant import det
         return 1/det(self.arg)
@@ -67,14 +77,6 @@ class Inverse(MatPow):
             arg = arg.doit(**hints)
 
         return arg.inverse()
-
-    def _eval_derivative_matrix_lines(self, x):
-        arg = self.args[0]
-        lines = arg._eval_derivative_matrix_lines(x)
-        for line in lines:
-            line.first_pointer *= -self.T
-            line.second_pointer *= self
-        return lines
 
 
 from sympy.assumptions.ask import ask, Q

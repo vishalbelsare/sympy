@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.combinatorics.free_groups import free_group
 from sympy.printing.defaults import DefaultPrinting
 
@@ -82,7 +83,7 @@ class CosetTable(DefaultPrinting):
         H = self.subgroup
         self._grp = free_group(', ' .join(["a_%d" % i for i in range(len(H))]))[0]
         self.P = [[None]*len(self.A)]
-        self.p_p = {}
+        self.p_p = {0:self._grp.identity}
 
     @property
     def omega(self):
@@ -716,14 +717,12 @@ class CosetTable(DefaultPrinting):
         table = self.table
         while len(self.deduction_stack) > 0:
             alpha, x = self.deduction_stack.pop()
-            for w in R_c_x:
-                if not self.scan_check(alpha, w):
-                    return False
+            if not all(self.scan_check(alpha, w) for w in R_c_x):
+                return False
             beta = table[alpha][self.A_dict[x]]
             if beta is not None:
-                for w in R_c_x_inv:
-                    if not self.scan_check(beta, w):
-                        return False
+                if not all(self.scan_check(beta, w) for w in R_c_x_inv):
+                    return False
         return True
 
     def switch(self, beta, gamma):
@@ -770,7 +769,7 @@ class CosetTable(DefaultPrinting):
         Examples
         ========
 
-        >>> from sympy.combinatorics.free_groups import free_group
+        >>> from sympy.combinatorics import free_group
         >>> from sympy.combinatorics.fp_groups import FpGroup, coset_enumeration_r
         >>> F, x, y = free_group("x, y")
 
@@ -816,7 +815,13 @@ class CosetTable(DefaultPrinting):
                 for x in A:
                     beta = table[alpha][A_dict[x]]
                     table[gamma][A_dict[x]] = beta
-                    table[beta][A_dict_inv[x]] == gamma
+                    # XXX: The line below uses == rather than = which means
+                    # that it has no effect. It is not clear though if it is
+                    # correct simply to delete the line or to change it to
+                    # use =. Changing it causes some tests to fail.
+                    #
+                    # https://github.com/sympy/sympy/issues/27633
+                    table[beta][A_dict_inv[x]] == gamma # noqa: B015
         # all the cosets in the table are live cosets
         self.p = list(range(gamma + 1))
         # delete the useless columns
@@ -846,7 +851,7 @@ class CosetTable(DefaultPrinting):
         Examples
         ========
 
-        >>> from sympy.combinatorics.free_groups import free_group
+        >>> from sympy.combinatorics import free_group
         >>> from sympy.combinatorics.fp_groups import FpGroup, coset_enumeration_r
         >>> F, x, y = free_group("x, y")
         >>> f = FpGroup(F, [x**3, y**3, x**-1*y**-1*x*y])
@@ -1131,7 +1136,7 @@ def coset_enumeration_r(fp_grp, Y, max_cosets=None, draft=None,
     R = fp_grp.relators
     A_dict = C.A_dict
     p = C.p
-    for i in range(0, len(Y)):
+    for i in range(len(Y)):
         if modified:
             _scan_and_fill(0, Y[i], C._grp.generators[i])
         else:

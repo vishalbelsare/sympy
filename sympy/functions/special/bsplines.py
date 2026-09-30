@@ -1,6 +1,9 @@
+from __future__ import annotations
+from itertools import pairwise
 from sympy.core import S, sympify
 from sympy.core.symbol import (Dummy, symbols)
 from sympy.functions import Piecewise, piecewise_fold
+from sympy.logic.boolalg import And
 from sympy.sets.sets import Interval
 
 from functools import lru_cache
@@ -13,7 +16,6 @@ def _ivl(cond, x):
     which an expression is valid like (lo <= x) & (x <= hi).
     This function returns (lo, hi).
     """
-    from sympy.logic.boolalg import And
     if isinstance(cond, And) and len(cond.args) == 2:
         a, b = cond.args
         if a.lts == x:
@@ -287,11 +289,11 @@ def interpolating_spline(d, x, X, Y):
 
     x : symbol
 
-    X : list of strictly increasing integer values
+    X : list of strictly increasing real values
         list of X coordinates through which the spline passes
 
-    Y : list of strictly increasing integer values
-        list of Y coordinates through which the spline passes
+    Y : list of real values
+        list of corresponding Y coordinates through which the spline passes
 
     See Also
     ========
@@ -310,7 +312,7 @@ def interpolating_spline(d, x, X, Y):
         raise ValueError("Number of X and Y coordinates must be the same.")
     if len(X) < d + 1:
         raise ValueError("Degree must be less than the number of control points.")
-    if not all(a < b for a, b in zip(X, X[1:])):
+    if not all(a < b for a, b in pairwise(X)):
         raise ValueError("The x-coordinates must be strictly increasing.")
     X = [sympify(i) for i in X]
 
@@ -336,10 +338,7 @@ def interpolating_spline(d, x, X, Y):
 
     # Sorting the intervals
     #  ival contains the end-points of each interval
-    ival = [_ivl(c, x) for c in intervals]
-    com = zip(ival, intervals)
-    com = sorted(com, key=lambda x: x[0])
-    intervals = [y for x, y in com]
+    intervals = sorted(intervals, key=lambda c: _ivl(c, x))
 
     basis_dicts = [{c: e for (e, c) in b.args} for b in basis]
     spline = []

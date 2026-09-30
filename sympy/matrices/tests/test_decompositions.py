@@ -1,9 +1,12 @@
+from __future__ import annotations
 from sympy.core.function import expand_mul
-from sympy.core.numbers import (I, Rational)
+from sympy.core.numbers import I, Rational
 from sympy.core.singleton import S
+from sympy.core.symbol import Symbol
 from sympy.functions.elementary.miscellaneous import sqrt
+from sympy.functions.elementary.complexes import Abs
 from sympy.simplify.simplify import simplify
-from sympy.matrices.matrices import NonSquareMatrixError
+from sympy.matrices.exceptions import NonSquareMatrixError
 from sympy.matrices import Matrix, zeros, eye, SparseMatrix
 from sympy.abc import x, y, z
 from sympy.testing.pytest import raises, slow
@@ -129,7 +132,6 @@ def test_singular_value_decompositionD():
     assert simplify(U * S * V.T) == D
 
 
-
 def test_QR():
     A = Matrix([[1, 2], [2, 3]])
     Q, S = A.QRdecomposition()
@@ -152,6 +154,18 @@ def test_QR():
     assert Q.T * Q == eye(Q.cols)
     assert R.is_upper
     assert A == Q*R
+
+    x = Symbol('x')
+    A = Matrix([x])
+    Q, R = A.QRdecomposition()
+    assert Q == Matrix([x / Abs(x)])
+    assert R == Matrix([Abs(x)])
+
+    A = Matrix([[x, 0], [0, x]])
+    Q, R = A.QRdecomposition()
+    assert Q == x / Abs(x) * Matrix([[1, 0], [0, 1]])
+    assert R == Abs(x) * Matrix([[1, 0], [0, 1]])
+
 
 def test_QR_non_square():
     # Narrow (cols < rows) matrices
@@ -261,6 +275,20 @@ def test_QR_trivial():
     assert Q.T * Q == eye(Q.cols)
     assert R.is_upper
     assert A == Q*R
+
+
+def test_QR_symbolic_dependent_columns():
+    a = Symbol('a', real=True)
+    b = Symbol('b', real=True)
+    k = Symbol('k', real=True)
+    A = Matrix([[a, k*a],
+                [b, k*b]])
+    Q, R = A.QRdecomposition()
+    assert A.rank() == 1
+    assert Q.cols == A.rank()
+    QQ = (Q.H * Q).applyfunc(simplify)
+    assert not QQ.has(S.NaN)
+    assert (Q*R - A).applyfunc(simplify) == zeros(2, 2)
 
 
 def test_QR_float():

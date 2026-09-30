@@ -26,7 +26,8 @@ The main references for this are:
     Gordon and Breach Science Publisher
 """
 
-from typing import Dict as tDict, Tuple as tTuple
+from __future__ import annotations
+import itertools
 
 from sympy import SYMPY_DEBUG
 from sympy.core import S, Expr
@@ -37,10 +38,12 @@ from sympy.core.exprtools import factor_terms
 from sympy.core.function import (expand, expand_mul, expand_power_base,
                                  expand_trig, Function)
 from sympy.core.mul import Mul
-from sympy.core.numbers import ilcm, Rational, pi
+from sympy.core.intfunc import ilcm
+from sympy.core.numbers import Rational, pi
 from sympy.core.relational import Eq, Ne, _canonical_coeff
 from sympy.core.sorting import default_sort_key, ordered
-from sympy.core.symbol import Dummy, symbols, Wild
+from sympy.core.symbol import Dummy, symbols, Wild, Symbol
+from sympy.core.sympify import sympify
 from sympy.functions.combinatorial.factorials import factorial
 from sympy.functions.elementary.complexes import (re, im, arg, Abs, sign,
         unpolarify, polarify, polar_lift, principal_branch, unbranched_argument,
@@ -64,11 +67,9 @@ from sympy.functions.special.singularity_functions import SingularityFunction
 from .integrals import Integral
 from sympy.logic.boolalg import And, Or, BooleanAtom, Not, BooleanFunction
 from sympy.polys import cancel, factor
-from sympy.simplify.fu import sincos_to_sum
-from sympy.simplify import (collect, gammasimp, hyperexpand, powdenest,
-                            powsimp, simplify)
 from sympy.utilities.iterables import multiset_partitions
 from sympy.utilities.misc import debug as _debug
+from sympy.utilities.misc import debugf as _debugf
 
 # keep this at top for easy reference
 z = Dummy('z')
@@ -293,22 +294,23 @@ def _create_lookup_table(table):
 ####################################################################
 
 from sympy.utilities.timeutils import timethis
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sympy.core.basic import Basic
 timeit = timethis('meijerg')
 
 
-def _mytype(f, x):
+def _mytype(f: Basic, x: Symbol) -> tuple[type[Basic], ...]:
     """ Create a hashable entity describing the type of f. """
+    def key(x: type[Basic]) -> tuple[int, int, str]:
+        return x.class_key()
+
     if x not in f.free_symbols:
         return ()
     elif f.is_Function:
-        return (type(f),)
-    else:
-        types = [_mytype(a, x) for a in f.args]
-        res = []
-        for t in types:
-            res += list(t)
-        res.sort()
-        return tuple(res)
+        return type(f),
+    return tuple(sorted((t for a in f.args for t in _mytype(a, x)), key=key))
 
 
 class _CoeffExpValueError(ValueError):
@@ -337,6 +339,7 @@ def _get_coeff_exp(expr, x):
     >>> _get_coeff_exp(x**3, x)
     (1, 3)
     """
+    from sympy.simplify import powsimp
     (c, m) = expand_power_base(powsimp(expr)).as_coeff_mul(x)
     if not m:
         return c, S.Zero
@@ -408,21 +411,18 @@ def _find_splitting_points(expr, x):
     {-3, 0}
     """
     p, q = [Wild(n, exclude=[x]) for n in 'pq']
-
-    def compute_innermost(expr, res):
+    res = set()
+    stack = [expr]
+    while stack:
+        expr = stack.pop()
         if not isinstance(expr, Expr):
-            return
+            continue
         m = expr.match(p*x + q)
         if m and m[p] != 0:
             res.add(-m[q]/m[p])
-            return
-        if expr.is_Atom:
-            return
-        for argument in expr.args:
-            compute_innermost(argument, res)
-    innermost = set()
-    compute_innermost(expr, innermost)
-    return innermost
+        elif not expr.is_Atom:
+            stack.extend(expr.args)
+    return res
 
 
 def _split_mul(f, x):
@@ -525,11 +525,7 @@ def _inflate_g(g, n):
     # See: [L, page 150, equation (5)]
     def inflate(params, n):
         """ (a1, .., ak) -> (a1/n, (a1+1)/n, ..., (ak + n-1)/n) """
-        res = []
-        for a in params:
-            for i in range(n):
-                res.append((a + i)/n)
-        return res
+        return [(a + i)/n for a, i in itertools.product(params, range(n))]
     v = S(len(g.ap) - len(g.bq))
     C = n**(1 + g.nu + v/2)
     C /= (2*pi)**((n - 1)*g.delta)
@@ -572,7 +568,8 @@ def _inflate_fox_h(g, a):
     bs = [(n + 1)/p for n in range(p)]
     return D, meijerg(g.an, g.aother, g.bm, list(g.bother) + bs, z)
 
-_dummies = {}  # type: tDict[tTuple[str, str], Dummy]
+
+_dummies: dict[tuple[str, str], Dummy]  = {}
 
 
 def _dummy(name, token, expr, **kwargs):
@@ -592,7 +589,6 @@ def _dummy_(name, token, **kwargs):
     Return a dummy associated to name and token. Same effect as declaring
     it globally.
     """
-    global _dummies
     if not (name, token) in _dummies:
         _dummies[(name, token)] = Dummy(name, **kwargs)
     return _dummies[(name, token)]
@@ -662,7 +658,7 @@ def _condsimp(cond, first=True):
         (Ne(p, 2) & (cos(Abs(arg(p)))*Abs(p) > 2), Abs(p) > 2),  # 13
         ((Abs(arg(p)) < pi/2) & (cos(Abs(arg(p)))*sqrt(Abs(p**2)) > 1), p**2 > 1),  # 14
     ]
-    cond = cond.func(*list(map(lambda _: _condsimp(_, first), cond.args)))
+    cond = cond.func(*[_condsimp(_, first) for _ in cond.args])
     change = True
     while change:
         change = False
@@ -794,17 +790,11 @@ def _check_antecedents_1(g, x, helper=False):
                                             tr(g.an), tr(g.aother), x/eta),
                                     x)
 
-    tmp = []
-    for b in g.bm:
-        tmp += [-re(b) < 1]
-    for a in g.an:
-        tmp += [1 < 1 - re(a)]
+    tmp = [-re(b) < 1 for b in g.bm] + [1 < 1 - re(a) for a in g.an]
     cond_3 = And(*tmp)
 
-    for b in g.bother:
-        tmp += [-re(b) < 1]
-    for a in g.aother:
-        tmp += [1 < 1 - re(a)]
+    tmp += [-re(b) < 1 for b in g.bother]
+    tmp += [1 < 1 - re(a) for a in g.aother]
     cond_3_star = And(*tmp)
 
     cond_4 = (-re(g.nu) + (q + 1 - p)/2 > q - p)
@@ -812,12 +802,15 @@ def _check_antecedents_1(g, x, helper=False):
     def debug(*msg):
         _debug(*msg)
 
+    def debugf(string, arg):
+        _debugf(string, arg)
+
     debug('Checking antecedents for 1 function:')
-    debug('  delta=%s, eta=%s, m=%s, n=%s, p=%s, q=%s'
-          % (delta, eta, m, n, p, q))
-    debug('  ap = %s, %s' % (list(g.an), list(g.aother)))
-    debug('  bq = %s, %s' % (list(g.bm), list(g.bother)))
-    debug('  cond_3=%s, cond_3*=%s, cond_4=%s' % (cond_3, cond_3_star, cond_4))
+    debugf('  delta=%s, eta=%s, m=%s, n=%s, p=%s, q=%s',
+           (delta, eta, m, n, p, q))
+    debugf('  ap = %s, %s', (list(g.an), list(g.aother)))
+    debugf('  bq = %s, %s', (list(g.bm), list(g.bother)))
+    debugf('  cond_3=%s, cond_3*=%s, cond_4=%s', (cond_3, cond_3_star, cond_4))
 
     conds = []
 
@@ -860,7 +853,7 @@ def _check_antecedents_1(g, x, helper=False):
 
     # extra case from wofram functions site:
     # (reproduced verbatim from Prudnikov, section 2.24.2)
-    # http://functions.wolfram.com/HypergeometricFunctions/MeijerG/21/02/01/
+    # https://functions.wolfram.com/HypergeometricFunctions/MeijerG/21/02/01/
     case_extra = []
     case_extra += [Eq(p, q), Eq(delta, 0), Eq(unbranched_argument(eta), 0), Ne(eta, 0)]
     if not helper:
@@ -900,6 +893,7 @@ def _int0oo_1(g, x):
     >>> _int0oo_1(meijerg([a], [b], [c], [d], x*y), x)
     gamma(-a)*gamma(c + 1)/(y*gamma(-d)*gamma(b + 1))
     """
+    from sympy.simplify import gammasimp
     # See [L, section 5.6.1]. Note that s=1.
     eta, _ = _get_coeff_exp(g.argument, x)
     res = 1/eta
@@ -984,6 +978,7 @@ def _rewrite_saxena(fac, po, g1, g2, x, full_pb=False):
     g1 = meijerg(tr(g1.an), tr(g1.aother), tr(g1.bm), tr(g1.bother), a1*x)
     g2 = meijerg(g2.an, g2.aother, g2.bm, g2.bother, a2*x)
 
+    from sympy.simplify import powdenest
     return powdenest(fac, polar=True), g1, g2
 
 
@@ -997,7 +992,7 @@ def _check_antecedents(g1, g2, x):
     # [P], Section 2.24.1
     #
     # They are also reproduced (verbatim!) at
-    # http://functions.wolfram.com/HypergeometricFunctions/MeijerG/21/02/03/
+    # https://functions.wolfram.com/HypergeometricFunctions/MeijerG/21/02/03/
     #
     # Note: k=l=r=alpha=1
     sigma, _ = _get_coeff_exp(g1.argument, x)
@@ -1014,19 +1009,18 @@ def _check_antecedents(g1, g2, x):
     theta = (pi*(v - s - t) + Abs(unbranched_argument(sigma)))/(v - u)
 
     _debug('Checking antecedents:')
-    _debug('  sigma=%s, s=%s, t=%s, u=%s, v=%s, b*=%s, rho=%s'
-           % (sigma, s, t, u, v, bstar, rho))
-    _debug('  omega=%s, m=%s, n=%s, p=%s, q=%s, c*=%s, mu=%s,'
-           % (omega, m, n, p, q, cstar, mu))
-    _debug('  phi=%s, eta=%s, psi=%s, theta=%s' % (phi, eta, psi, theta))
+    _debugf('  sigma=%s, s=%s, t=%s, u=%s, v=%s, b*=%s, rho=%s',
+            (sigma, s, t, u, v, bstar, rho))
+    _debugf('  omega=%s, m=%s, n=%s, p=%s, q=%s, c*=%s, mu=%s,',
+            (omega, m, n, p, q, cstar, mu))
+    _debugf('  phi=%s, eta=%s, psi=%s, theta=%s', (phi, eta, psi, theta))
 
     def _c1():
         for g in [g1, g2]:
-            for i in g.an:
-                for j in g.bm:
-                    diff = i - j
-                    if diff.is_integer and diff.is_positive:
-                        return False
+            for i, j in itertools.product(g.an, g.bm):
+                diff = i - j
+                if diff.is_integer and diff.is_positive:
+                    return False
         return True
     c1 = _c1()
     c2 = And(*[re(1 + i + j) > 0 for i in g1.bm for j in g2.bm])
@@ -1054,7 +1048,7 @@ def _check_antecedents(g1, g2, x):
     #   https://reduce-algebra.svn.sourceforge.net/svnroot/reduce-algebra/trunk/packages/defint/definta.red
     #   (search for tst14)
     # The Wolfram alpha version:
-    #   http://functions.wolfram.com/HypergeometricFunctions/MeijerG/21/02/03/03/0014/
+    #   https://functions.wolfram.com/HypergeometricFunctions/MeijerG/21/02/03/03/0014/
     z0 = exp(-(bstar + cstar)*pi*S.ImaginaryUnit)
     zos = unpolarify(z0*omega/sigma)
     zso = unpolarify(z0*sigma/omega)
@@ -1130,13 +1124,13 @@ def _check_antecedents(g1, g2, x):
     for cond, i in [(c1, 1), (c2, 2), (c3, 3), (c4, 4), (c5, 5), (c6, 6),
                     (c7, 7), (c8, 8), (c9, 9), (c10, 10), (c11, 11),
                     (c12, 12), (c13, 13), (c14, 14), (c15, 15)]:
-        _debug('  c%s:' % i, cond)
+        _debugf('  c%s: %s', (i, cond))
 
     # We will return Or(*conds)
     conds = []
 
     def pr(count):
-        _debug('  case %s:' % count, conds[-1])
+        _debugf('  case %s: %s', (count, conds[-1]))
     conds += [And(m*n*s*t != 0, bstar.is_positive is True, cstar.is_positive is True, c1, c2, c3, c10,
                   c12)]  # 1
     pr(1)
@@ -1306,7 +1300,7 @@ def _int0oo(g1, g2, x):
     >>> g1 = meijerg([], [], [-S(1)/2, 0], [], s**2*t/4)
     >>> g2 = meijerg([], [], [m/2], [-m/2], t/4)
     >>> _int0oo(g1, g2, t)
-    4*meijerg(((1/2, 0), ()), ((m/2,), (-m/2,)), s**(-2))/s**2
+    4*meijerg(((0, 1/2), ()), ((m/2,), (-m/2,)), s**(-2))/s**2
     """
     # See: [L, section 5.6.2, equation (1)]
     eta, _ = _get_coeff_exp(g1.argument, x)
@@ -1328,6 +1322,7 @@ def _rewrite_inversion(fac, po, g, x):
 
     def tr(l):
         return [t + s/b for t in l]
+    from sympy.simplify import powdenest
     return (powdenest(fac/a**(s/b), polar=True),
             meijerg(tr(g.an), tr(g.aother), tr(g.bm), tr(g.bother), g.argument))
 
@@ -1380,9 +1375,9 @@ def _check_antecedents_inversion(g, x):
         epsilon = S.NaN
     theta = ((1 - sigma)/2 + Add(*g.bq) - Add(*g.ap))/sigma
     delta = g.delta
-    _debug('  m=%s, n=%s, p=%s, q=%s, tau=%s, nu=%s, rho=%s, sigma=%s' % (
-        m, n, p, q, tau, nu, rho, sigma))
-    _debug('  epsilon=%s, theta=%s, delta=%s' % (epsilon, theta, delta))
+    _debugf('  m=%s, n=%s, p=%s, q=%s, tau=%s, nu=%s, rho=%s, sigma=%s',
+            (m, n, p, q, tau, nu, rho, sigma))
+    _debugf('  epsilon=%s, theta=%s, delta=%s', (epsilon, theta, delta))
 
     # First check if the computation is valid.
     if not (g.delta >= e/2 or (p >= 1 and p >= q)):
@@ -1392,11 +1387,10 @@ def _check_antecedents_inversion(g, x):
     # Now check if the inversion integral exists.
 
     # Test "condition A"
-    for a in g.an:
-        for b in g.bm:
-            if (a - b).is_integer and a > b:
-                _debug('  Not a valid G function.')
-                return False
+    for a, b in itertools.product(g.an, g.bm):
+        if (a - b).is_integer and a > b:
+            _debug('  Not a valid G function.')
+            return False
 
     # There are two cases. If p >= q, we can directly use a slater expansion
     # like [L], 5.2 (11). Note in particular that the asymptotics of such an
@@ -1558,6 +1552,7 @@ def _rewrite_single(f, x, recursive=True):
             return inverse_mellin_transform(F, s, x, strip,
                                             as_meijerg=True, needeval=True)
         except MellinTransformStripError:
+            from sympy.simplify import simplify
             return inverse_mellin_transform(
                 simplify(cancel(expand(F))), s, x, strip,
                 as_meijerg=True, needeval=True)
@@ -1568,6 +1563,7 @@ def _rewrite_single(f, x, recursive=True):
     def my_integrator(f, x):
         r = _meijerint_definite_4(f, x, only_double=True)
         if r is not None:
+            from sympy.simplify import hyperexpand
             res, cond = r
             res = _my_unpolarify(hyperexpand(res, rewrite='nonrepsmall'))
             return Piecewise((res, cond),
@@ -1645,14 +1641,13 @@ def _rewrite2(f, x):
         lambda p: max(len(_find_splitting_points(p[0], x)),
                       len(_find_splitting_points(p[1], x)))]))
 
-    for recursive in [False, True]:
-        for fac1, fac2 in l:
-            g1 = _rewrite_single(fac1, x, recursive)
-            g2 = _rewrite_single(fac2, x, recursive)
-            if g1 and g2:
-                cond = And(g1[1], g2[1])
-                if cond != False:
-                    return fac, po, g1[0], g2[0], cond
+    for recursive, (fac1, fac2) in itertools.product((False, True), l):
+        g1 = _rewrite_single(fac1, x, recursive)
+        g2 = _rewrite_single(fac2, x, recursive)
+        if g1 and g2:
+            cond = And(g1[1], g2[1])
+            if cond != False:
+                return fac, po, g1[0], g2[0], cond
 
 
 def meijerint_indefinite(f, x):
@@ -1668,6 +1663,7 @@ def meijerint_indefinite(f, x):
     >>> meijerint_indefinite(sin(x), x)
     -cos(x)
     """
+    f = sympify(f)
     results = []
     for a in sorted(_find_splitting_points(f, x) | {S.Zero}, key=default_sort_key):
         res = _meijerint_indefinite_1(f.subs(x, x + a), x)
@@ -1684,6 +1680,7 @@ def meijerint_indefinite(f, x):
             _rewrite_hyperbolics_as_exp(f), x)
         if rv:
             if not isinstance(rv, list):
+                from sympy.simplify.radsimp import collect
                 return collect(factor_terms(rv), rv.atoms(exp))
             results.extend(rv)
     if results:
@@ -1693,6 +1690,7 @@ def meijerint_indefinite(f, x):
 def _meijerint_indefinite_1(f, x):
     """ Helper that does not attempt any substitution. """
     _debug('Trying to compute the indefinite integral of', f, 'wrt', x)
+    from sympy.simplify import hyperexpand, powdenest
 
     gs = _rewrite1(f, x)
     if gs is None:
@@ -1708,8 +1706,8 @@ def _meijerint_indefinite_1(f, x):
         c += s
 
         # we do a substitution t=a*x**b, get integrand fac*t**rho*g
-        fac_ = fac * C / (b*a**((1 + c)/b))
-        rho = (c + 1)/b - 1
+        fac_ = fac * C * x**(1 + c) / b
+        rho = (c + 1)/b
 
         # we now use t**rho*G(params, t) = G(params + rho, t)
         # [L, page 150, equation (4)]
@@ -1722,13 +1720,13 @@ def _meijerint_indefinite_1(f, x):
         t = _dummy('t', 'meijerint-indefinite', S.One)
 
         def tr(p):
-            return [a + rho + 1 for a in p]
+            return [a + rho for a in p]
         if any(b.is_integer and (b <= 0) == True for b in tr(g.bm)):
             r = -meijerg(
-                tr(g.an), tr(g.aother) + [1], tr(g.bm) + [0], tr(g.bother), t)
+                list(g.an), list(g.aother) + [1-rho], list(g.bm) + [-rho], list(g.bother), t)
         else:
             r = meijerg(
-                tr(g.an) + [1], tr(g.aother), tr(g.bm), tr(g.bother) + [0], t)
+                list(g.an) + [1-rho], list(g.aother), list(g.bm), list(g.bother) + [-rho], t)
         # The antiderivative is most often expected to be defined
         # in the neighborhood of  x = 0.
         if b.is_extended_nonnegative and not f.subs(x, 0).has(S.NaN, S.ComplexInfinity):
@@ -1749,7 +1747,7 @@ def _meijerint_indefinite_1(f, x):
             exp(x)
 
         cancel is used before mul_expand since it is possible for an
-        expression to have an additive constant that doesn't become isolated
+        expression to have an additive constant that does not become isolated
         with simple expansion. Such a situation was identified in issue 6369:
 
         Examples
@@ -1809,8 +1807,8 @@ def meijerint_definite(f, x, a, b):
     #
     # There are usually several ways of doing this, and we want to try all.
     # This function does (1), calls _meijerint_definite_2 for step (2).
-    _debug('Integrating', f, 'wrt %s from %s to %s.' % (x, a, b))
-
+    _debugf('Integrating %s wrt %s from %s to %s.', (f, x, a, b))
+    f = sympify(f)
     if f.has(DiracDelta):
         _debug('Integrand has DiracDelta terms - giving up.')
         return None
@@ -1877,7 +1875,7 @@ def meijerint_definite(f, x, a, b):
         if b is S.Infinity:
             for split in _find_splitting_points(f, x):
                 if (a - split >= 0) == True:
-                    _debug('Trying x -> x + %s' % split)
+                    _debugf('Trying x -> x + %s', split)
                     res = _meijerint_definite_2(f.subs(x, x + split)
                                                 *Heaviside(x + split - a), x)
                     if res:
@@ -1910,6 +1908,7 @@ def meijerint_definite(f, x, a, b):
             _rewrite_hyperbolics_as_exp(f_), x_, a_, b_)
         if rv:
             if not isinstance(rv, list):
+                from sympy.simplify.radsimp import collect
                 rv = (collect(factor_terms(rv[0]), rv[0].atoms(exp)),) + rv[1:]
                 return rv
             results.extend(rv)
@@ -1940,6 +1939,7 @@ def _guess_expansion(f, x):
             saw.add(expanded)
 
     if orig.has(cos, sin):
+        from sympy.simplify.fu import sincos_to_sum
         reduced = sincos_to_sum(orig)
         if reduced not in saw:
             res += [(reduced, 'trig power reduction')]
@@ -2020,6 +2020,7 @@ def _meijerint_definite_4(f, x, only_double=False):
     The parameter ``only_double`` is used internally in the recursive algorithm
     to disable trying to rewrite f as a single G-function.
     """
+    from sympy.simplify import hyperexpand
     # This function does (2) and (3)
     _debug('Integrating', f)
     # Try single G function.
@@ -2069,9 +2070,9 @@ def _meijerint_definite_4(f, x, only_double=False):
                 break
             cond = _my_unpolarify(cond)
             if cond == False:
-                _debug('But cond is always False (full_pb=%s).' % full_pb)
+                _debugf('But cond is always False (full_pb=%s).', full_pb)
             else:
-                _debug('Result before branch substitutions is:', res)
+                _debugf('Result before branch substitutions is: %s', (res, ))
                 if only_double:
                     return res, cond
                 return _my_unpolarify(hyperexpand(res)), cond
@@ -2178,6 +2179,7 @@ def meijerint_inversion(f, x, t):
             _debug('But cond is always False.')
         else:
             _debug('Result before branch substitution:', res)
+            from sympy.simplify import hyperexpand
             res = _my_unpolarify(hyperexpand(res))
             if not res.has(Heaviside):
                 res *= Heaviside(t)

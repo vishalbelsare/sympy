@@ -4,9 +4,11 @@ Module defining unit prefixe class and some constants.
 Constant dict for SI and binary prefixes are defined as PREFIXES and
 BIN_PREFIXES.
 """
+from __future__ import annotations
 from sympy.core.expr import Expr
+from sympy.core.symbol import Symbol
 from sympy.core.sympify import sympify
-
+from sympy.core.singleton import S
 
 class Prefix(Expr):
     """
@@ -30,10 +32,16 @@ class Prefix(Expr):
     _op_priority = 13.0
     is_commutative = True
 
-    def __new__(cls, name, abbrev, exponent, base=sympify(10)):
+    def __new__(cls, name, abbrev, exponent, base=sympify(10), latex_repr=None):
 
         name = sympify(name)
-        abbrev = sympify(abbrev)
+        # An abbreviation is a name, so keep it a Symbol; sympifying the string
+        # would turn e.g. "Ei" into the exponential-integral function and "E"
+        # into Euler's number.
+        if isinstance(abbrev, str):
+            abbrev = Symbol(abbrev)
+        else:
+            abbrev = sympify(abbrev)
         exponent = sympify(exponent)
         base = sympify(base)
 
@@ -43,6 +51,7 @@ class Prefix(Expr):
         obj._scale_factor = base**exponent
         obj._exponent = exponent
         obj._base = base
+        obj._latex_repr = latex_repr
         return obj
 
     @property
@@ -57,20 +66,28 @@ class Prefix(Expr):
     def scale_factor(self):
         return self._scale_factor
 
+    def _latex(self, printer):
+        if self._latex_repr is None:
+            return r'\text{%s}' % self._abbrev
+        return self._latex_repr
+
     @property
     def base(self):
         return self._base
 
     def __str__(self):
-        # TODO: add proper printers and tests:
-        if self.base == 10:
-            return "Prefix(%r, %r, %r)" % (
-                str(self.name), str(self.abbrev), self._exponent)
-        else:
-            return "Prefix(%r, %r, %r, %r)" % (
-                str(self.name), str(self.abbrev), self._exponent, self.base)
+        return str(self._abbrev)
 
-    __repr__ = __str__
+    @staticmethod
+    def _prefix_with_scale_factor(fact):
+        """Return the decimal or binary prefix whose scale factor is ``fact``,
+        or ``None``.  Both ``PREFIXES`` and ``BIN_PREFIXES`` are searched so that
+        e.g. ``kibi*kibi`` simplifies to ``mebi``, mirroring ``kilo*kilo``."""
+        for prefixes in (PREFIXES, BIN_PREFIXES):
+            for prefix in prefixes.values():
+                if prefix.scale_factor == fact:
+                    return prefix
+        return None
 
     def __mul__(self, other):
         from sympy.physics.units import Quantity
@@ -79,13 +96,13 @@ class Prefix(Expr):
 
         fact = self.scale_factor * other.scale_factor
 
-        if fact == 1:
-            return 1
-        elif isinstance(other, Prefix):
+        if isinstance(other, Prefix):
+            if fact == 1:
+                return S.One
             # simplify prefix
-            for p in PREFIXES:
-                if PREFIXES[p].scale_factor == fact:
-                    return PREFIXES[p]
+            prefix = self._prefix_with_scale_factor(fact)
+            if prefix is not None:
+                return prefix
             return fact
 
         return self.scale_factor * other
@@ -97,20 +114,20 @@ class Prefix(Expr):
         fact = self.scale_factor / other.scale_factor
 
         if fact == 1:
-            return 1
+            return S.One
         elif isinstance(other, Prefix):
-            for p in PREFIXES:
-                if PREFIXES[p].scale_factor == fact:
-                    return PREFIXES[p]
+            prefix = self._prefix_with_scale_factor(fact)
+            if prefix is not None:
+                return prefix
             return fact
 
         return self.scale_factor / other
 
     def __rtruediv__(self, other):
         if other == 1:
-            for p in PREFIXES:
-                if PREFIXES[p].scale_factor == 1 / self.scale_factor:
-                    return PREFIXES[p]
+            prefix = self._prefix_with_scale_factor(1 / self.scale_factor)
+            if prefix is not None:
+                return prefix
         return other / self.scale_factor
 
 
@@ -119,7 +136,7 @@ def prefix_unit(unit, prefixes):
     Return a list of all units formed by unit and the given prefixes.
 
     You can use the predefined PREFIXES or BIN_PREFIXES, but you can also
-    pass as argument a subdict of them if you don't want all prefixed units.
+    pass as argument a subdict of them if you do not want all prefixed units.
 
         >>> from sympy.physics.units.prefixes import (PREFIXES,
         ...                                                 prefix_unit)
@@ -134,10 +151,11 @@ def prefix_unit(unit, prefixes):
 
     prefixed_units = []
 
-    for prefix_abbr, prefix in prefixes.items():
+    for prefix in prefixes.values():
         quantity = Quantity(
                 "%s%s" % (prefix.name, unit.name),
-                abbrev=("%s%s" % (prefix.abbrev, unit.abbrev))
+                abbrev=("%s%s" % (prefix.abbrev, unit.abbrev)),
+                is_prefixed=True,
            )
         UnitSystem._quantity_dimensional_equivalence_map_global[quantity] = unit
         UnitSystem._quantity_scale_factors_global[quantity] = (prefix.scale_factor, unit)
@@ -159,7 +177,7 @@ deca = Prefix('deca', 'da', 1)
 deci = Prefix('deci', 'd', -1)
 centi = Prefix('centi', 'c', -2)
 milli = Prefix('milli', 'm', -3)
-micro = Prefix('micro', 'mu', -6)
+micro = Prefix('micro', 'mu', -6, latex_repr=r"\mu")
 nano = Prefix('nano', 'n', -9)
 pico = Prefix('pico', 'p', -12)
 femto = Prefix('femto', 'f', -15)
@@ -168,7 +186,7 @@ zepto = Prefix('zepto', 'z', -21)
 yocto = Prefix('yocto', 'y', -24)
 
 
-# http://physics.nist.gov/cuu/Units/prefixes.html
+# https://physics.nist.gov/cuu/Units/prefixes.html
 PREFIXES = {
     'Y': yotta,
     'Z': zetta,
@@ -193,15 +211,15 @@ PREFIXES = {
 }
 
 
-kibi = Prefix('kibi', 'Y', 10, 2)
-mebi = Prefix('mebi', 'Y', 20, 2)
-gibi = Prefix('gibi', 'Y', 30, 2)
-tebi = Prefix('tebi', 'Y', 40, 2)
-pebi = Prefix('pebi', 'Y', 50, 2)
-exbi = Prefix('exbi', 'Y', 60, 2)
+kibi = Prefix('kibi', 'Ki', 10, 2)
+mebi = Prefix('mebi', 'Mi', 20, 2)
+gibi = Prefix('gibi', 'Gi', 30, 2)
+tebi = Prefix('tebi', 'Ti', 40, 2)
+pebi = Prefix('pebi', 'Pi', 50, 2)
+exbi = Prefix('exbi', 'Ei', 60, 2)
 
 
-# http://physics.nist.gov/cuu/Units/binary.html
+# https://physics.nist.gov/cuu/Units/binary.html
 BIN_PREFIXES = {
     'Ki': kibi,
     'Mi': mebi,

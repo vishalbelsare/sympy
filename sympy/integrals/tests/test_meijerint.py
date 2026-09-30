@@ -1,15 +1,19 @@
-from sympy.core.function import expand_func
+from __future__ import annotations
+from sympy.core.function import expand, expand_func
 from sympy.core.numbers import (I, Rational, oo, pi)
 from sympy.core.singleton import S
 from sympy.core.sorting import default_sort_key
+from sympy.functions.elementary.complexes import Abs, arg, re, unpolarify
 from sympy.functions.elementary.exponential import (exp, exp_polar, log)
-from sympy.functions.elementary.hyperbolic import cosh
+from sympy.functions.elementary.hyperbolic import cosh, acosh, sinh
 from sympy.functions.elementary.miscellaneous import sqrt
-from sympy.functions.elementary.trigonometric import (cos, sin, sinc)
+from sympy.functions.elementary.piecewise import Piecewise, piecewise_fold
+from sympy.functions.elementary.trigonometric import (cos, sin, sinc, asin)
 from sympy.functions.special.error_functions import (erf, erfc)
 from sympy.functions.special.gamma_functions import (gamma, polygamma)
 from sympy.functions.special.hyper import (hyper, meijerg)
 from sympy.integrals.integrals import (Integral, integrate)
+from sympy.polys.polytools import cancel
 from sympy.simplify.hyperexpand import hyperexpand
 from sympy.simplify.simplify import simplify
 from sympy.integrals.meijerint import (_rewrite_single, _rewrite1,
@@ -129,7 +133,6 @@ def test_recursive():
 def test_meijerint():
     from sympy.core.function import expand
     from sympy.core.symbol import symbols
-    from sympy.functions.elementary.complexes import arg
     s, t, mu = symbols('s t mu', real=True)
     assert integrate(meijerg([], [], [0], [], s*t)
                      *meijerg([], [], [mu/2], [-mu/2], t**2/4),
@@ -199,7 +202,6 @@ def test_meijerint():
     # (This is besselj*besselj in disguise, to stop the product from being
     #  recognised in the tables.)
     a, b, s = symbols('a b s')
-    from sympy.functions.elementary.complexes import re
     assert meijerint_definite(meijerg([], [], [a/2], [-a/2], x/4)
                   *meijerg([], [], [b/2], [-b/2], x/4)*x**(s - 1), x, 0, oo
         ) == (
@@ -283,7 +285,6 @@ def test_bessel():
 
 
 def test_inversion():
-    from sympy.functions.elementary.piecewise import piecewise_fold
     from sympy.functions.special.bessel import besselj
     from sympy.functions.special.delta_functions import Heaviside
 
@@ -343,7 +344,7 @@ def test_lookup_table():
     from sympy.integrals.meijerint import z as z_dummy
     table = {}
     _create_lookup_table(table)
-    for _, l in sorted(table.items()):
+    for l in table.values():
         for formula, terms, cond, hint in sorted(l, key=default_sort_key):
             subs = {}
             for ai in list(formula.free_symbols) + [z_dummy]:
@@ -391,7 +392,6 @@ def test_probability():
     # various integrals from probability theory
     from sympy.core.function import expand_mul
     from sympy.core.symbol import (Symbol, symbols)
-    from sympy.functions.elementary.complexes import Abs
     from sympy.simplify.gammasimp import gammasimp
     from sympy.simplify.powsimp import powsimp
     mu1, mu2 = symbols('mu1 mu2', nonzero=True)
@@ -590,7 +590,6 @@ def test_probability():
 def test_expint():
     """ Test various exponential integrals. """
     from sympy.core.symbol import Symbol
-    from sympy.functions.elementary.complexes import unpolarify
     from sympy.functions.elementary.hyperbolic import sinh
     from sympy.functions.special.error_functions import (Chi, Ci, Ei, Shi, Si, expint)
     assert simplify(unpolarify(integrate(exp(-z*x)/x**y, (x, 1, oo),
@@ -643,20 +642,19 @@ def test_expint():
 
 
 def test_messy():
-    from sympy.functions.elementary.complexes import re
     from sympy.functions.elementary.hyperbolic import (acosh, acoth)
-    from sympy.functions.elementary.piecewise import Piecewise
     from sympy.functions.elementary.trigonometric import (asin, atan)
     from sympy.functions.special.bessel import besselj
     from sympy.functions.special.error_functions import (Chi, E1, Shi, Si)
     from sympy.integrals.transforms import (fourier_transform, laplace_transform)
-    assert laplace_transform(Si(x), x, s) == ((-atan(s) + pi/2)/s, 0, True)
+    assert (laplace_transform(Si(x), x, s, simplify=True) ==
+            ((-atan(s) + pi/2)/s, 0, True))
 
-    assert laplace_transform(Shi(x), x, s) == (
+    assert laplace_transform(Shi(x), x, s, simplify=True) == (
         acoth(s)/s, -oo, s**2 > 1)
 
     # where should the logs be simplified?
-    assert laplace_transform(Chi(x), x, s) == (
+    assert laplace_transform(Chi(x), x, s, simplify=True) == (
         (log(s**(-2)) - log(1 - 1/s**2))/(2*s), -oo, s**2 > 1)
 
     # TODO maybe simplify the inequalities? when the simplification
@@ -666,7 +664,7 @@ def test_messy():
 
     # NOTE s < 0 can be done, but argument reduction is not good enough yet
     ans = fourier_transform(besselj(1, x)/x, x, s, noconds=False)
-    assert tuple([ans[0].factor(deep=True).expand(), ans[1]]) == \
+    assert (ans[0].factor(deep=True).expand(), ans[1]) == \
         (Piecewise((0, (s > 1/(2*pi)) | (s < -1/(2*pi))),
                    (2*sqrt(-4*pi**2*s**2 + 1), True)), s > 0)
     # TODO FT(besselj(0,x)) - conditions are messy (but for acceptable reasons)
@@ -716,6 +714,26 @@ def test_issue_7337():
     assert f._eval_interval(x, S.NegativeOne, S.One) == Rational(2, 5)
 
 
+def test_issue_7383():
+    from sympy.core.symbol import symbols
+
+    def make_integrand(R, a):
+        r = sqrt(x**2 + z**2)
+        u = erf(a*r/sqrt(2))/r
+        return u.diff(z, 2).subs(x, sqrt(R**2 - z**2))
+
+    R, a = symbols('R a')
+    integrand = make_integrand(R, a)
+    expected = -2*sqrt(2)*R*a**3*exp(-R**2*a**2/2)/(3*sqrt(pi))
+
+    assert expand(integrate(integrand, (z, -R, R)) - expected) == 0
+
+    R, a = symbols('R a', positive=True)
+    integrand = make_integrand(R, a)
+    expected = -2*sqrt(2)*R*a**3*exp(-R**2*a**2/2)/(3*sqrt(pi))
+    assert integrate(integrand, (z, -R, R), meijerg=True) == expected
+
+
 def test_issue_8368():
     assert meijerint_indefinite(cosh(x)*exp(-x*t), x) == (
         (-t - 1)*exp(x) + (-t + 1)*exp(-x))*exp(-t*x)/2/(t**2 - 1)
@@ -758,6 +776,29 @@ def test_issue_6462():
 
 
 def test_indefinite_1_bug():
-    assert integrate((b + t)**(-a), t, meijerg=True
-        ) == -b/(b**a*(1 + t/b)**a*(a - 1)
-        ) - t/(b**a*(1 + t/b)**a*(a - 1))
+    assert integrate((b + t)**(-a), t, meijerg=True) == -b*(1 + t/b)**(1 - a)/(a*b**a - b**a)
+
+
+def test_issue_22126():
+    integrand = 1/(x**3*sqrt(1 + x**4))
+    antiderivative = -sqrt(1 + x**4)/(2*x**2)
+
+    assert integrate(integrand, x, meijerg=True) == antiderivative
+    assert cancel(antiderivative.diff(x) - integrand) == 0
+
+
+def test_pr_23583():
+    # This result is wrong. Check whether new result is correct when this test fail.
+    assert integrate(1/sqrt((x - I)**2-1), meijerg=True) == \
+           Piecewise((acosh(x - I), Abs((x - I)**2) > 1), (-I*asin(x - I), True))
+
+
+# 25786
+def test_integrate_function_of_square_over_negatives():
+    assert integrate(exp(-x**2), (x,-5,0), meijerg=True) == sqrt(pi)/2 * erf(5)
+
+
+def test_issue_25949():
+    from sympy.core.symbol import symbols
+    y = symbols("y", nonzero=True)
+    assert integrate(cosh(y*(x + 1)), (x, -1, -0.25), meijerg=True) == sinh(0.75*y)/y

@@ -1,4 +1,6 @@
+from __future__ import annotations
 from sympy.core.add import Add
+from sympy.core.expr import Expr
 from sympy.core.function import (Function, Lambda, diff)
 from sympy.core.mod import Mod
 from sympy.core import (Catalan, EulerGamma, GoldenRatio)
@@ -19,15 +21,16 @@ from sympy.sets.fancysets import Range
 from sympy.codegen import For, Assignment, aug_assign
 from sympy.codegen.ast import Declaration, Variable, float32, float64, \
         value_const, real, bool_, While, FunctionPrototype, FunctionDefinition, \
-        integer, Return
+        integer, Return, Element
 from sympy.core.expr import UnevaluatedExpr
 from sympy.core.relational import Relational
 from sympy.logic.boolalg import And, Or, Not, Equivalent, Xor
 from sympy.matrices import Matrix, MatrixSymbol
 from sympy.printing.fortran import fcode, FCodePrinter
 from sympy.tensor import IndexedBase, Idx
+from sympy.tensor.array.expressions import ArraySymbol, ArrayElement
 from sympy.utilities.lambdify import implemented_function
-from sympy.testing.pytest import raises, warns_deprecated_sympy
+from sympy.testing.pytest import raises
 
 
 def test_UnevaluatedExpr():
@@ -77,6 +80,11 @@ def test_fcode_Pow():
     assert fcode(x**-1.0) == '      1d0/x'
     assert fcode(x**-2.0, 'y', source_format='free') == 'y = x**(-2.0d0)'  # 2823
     assert fcode(x**Rational(3, 7)) == '      x**(3.0d0/7.0d0)'
+
+
+def test_fcode_Pow_with_folded_negative_function():
+    expr = sin(Float("1.265344399150595") - Float("0.5") * pi) ** 2
+    assert fcode(expr, source_format="free", standard=95) == "(-0.30072421433515855d0)**2"
 
 
 def test_fcode_Rational():
@@ -203,10 +211,11 @@ def test_implicit():
 def test_not_fortran():
     x = symbols('x')
     g = Function('g')
-    gamma_f = fcode(gamma(x))
-    assert gamma_f == "C     Not supported in Fortran:\nC     gamma\n      gamma(x)"
-    assert fcode(Integral(sin(x))) == "C     Not supported in Fortran:\nC     Integral\n      Integral(sin(x), x)"
-    assert fcode(g(x)) == "C     Not supported in Fortran:\nC     g\n      g(x)"
+    with raises(NotImplementedError):
+        fcode(gamma(x))
+    assert fcode(Integral(sin(x)), strict=False) == "C     Not supported in Fortran:\nC     Integral\n      Integral(sin(x), x)"
+    with raises(NotImplementedError):
+        fcode(g(x))
 
 
 def test_user_functions():
@@ -329,7 +338,7 @@ def test_fcode_Xlogical():
     assert fcode(Xor(x, Not(y), evaluate=False), source_format="free") == \
         "x .neqv. .not. y"
     assert fcode(Xor(Not(x), y, evaluate=False), source_format="free") == \
-        "y .neqv. .not. x"
+        ".not. x .neqv. y"
     assert fcode(Xor(Not(x), Not(y), evaluate=False),
         source_format="free") == ".not. x .neqv. .not. y"
     assert fcode(Not(Xor(x, y, evaluate=False), evaluate=False),
@@ -374,39 +383,39 @@ def test_fcode_Xlogical():
     assert fcode(Equivalent(Xor(y, z, evaluate=False), x),
         source_format="free") == "x .eqv. (y .neqv. z)"
     assert fcode(Equivalent(Xor(z, x, evaluate=False), y),
-        source_format="free") == "y .eqv. (x .neqv. z)"
+        source_format="free") == "y .eqv. (z .neqv. x)"
     assert fcode(Equivalent(Xor(x, y, evaluate=False), z),
         source_format="free") == "z .eqv. (x .neqv. y)"
     assert fcode(Xor(Equivalent(y, z), x, evaluate=False),
-        source_format="free") == "x .neqv. (y .eqv. z)"
+        source_format="free") == "(y .eqv. z) .neqv. x"
     assert fcode(Xor(Equivalent(z, x), y, evaluate=False),
-        source_format="free") == "y .neqv. (x .eqv. z)"
+        source_format="free") == "(x .eqv. z) .neqv. y"
     assert fcode(Xor(Equivalent(x, y), z, evaluate=False),
-        source_format="free") == "z .neqv. (x .eqv. y)"
+        source_format="free") == "(x .eqv. y) .neqv. z"
     # mixed And/Xor
     assert fcode(Xor(And(y, z), x, evaluate=False), source_format="free") == \
-        "x .neqv. y .and. z"
+        "y .and. z .neqv. x"
     assert fcode(Xor(And(z, x), y, evaluate=False), source_format="free") == \
-        "y .neqv. x .and. z"
+        "x .and. z .neqv. y"
     assert fcode(Xor(And(x, y), z, evaluate=False), source_format="free") == \
-        "z .neqv. x .and. y"
+        "x .and. y .neqv. z"
     assert fcode(And(Xor(y, z, evaluate=False), x), source_format="free") == \
         "x .and. (y .neqv. z)"
     assert fcode(And(Xor(z, x, evaluate=False), y), source_format="free") == \
-        "y .and. (x .neqv. z)"
+        "y .and. (z .neqv. x)"
     assert fcode(And(Xor(x, y, evaluate=False), z), source_format="free") == \
         "z .and. (x .neqv. y)"
     # mixed Or/Xor
     assert fcode(Xor(Or(y, z), x, evaluate=False), source_format="free") == \
-        "x .neqv. y .or. z"
+        "y .or. z .neqv. x"
     assert fcode(Xor(Or(z, x), y, evaluate=False), source_format="free") == \
-        "y .neqv. x .or. z"
+        "x .or. z .neqv. y"
     assert fcode(Xor(Or(x, y), z, evaluate=False), source_format="free") == \
-        "z .neqv. x .or. y"
+        "x .or. y .neqv. z"
     assert fcode(Or(Xor(y, z, evaluate=False), x), source_format="free") == \
         "x .or. (y .neqv. z)"
     assert fcode(Or(Xor(z, x, evaluate=False), y), source_format="free") == \
-        "y .or. (x .neqv. z)"
+        "y .or. (z .neqv. x)"
     assert fcode(Or(Xor(x, y, evaluate=False), z), source_format="free") == \
         "z .or. (x .neqv. y)"
     # trinary Xor
@@ -415,9 +424,9 @@ def test_fcode_Xlogical():
     assert fcode(Xor(x, y, Not(z), evaluate=False), source_format="free") == \
         "x .neqv. y .neqv. .not. z"
     assert fcode(Xor(x, Not(y), z, evaluate=False), source_format="free") == \
-        "x .neqv. z .neqv. .not. y"
+        "x .neqv. .not. y .neqv. z"
     assert fcode(Xor(Not(x), y, z, evaluate=False), source_format="free") == \
-        "y .neqv. z .neqv. .not. x"
+        ".not. x .neqv. y .neqv. z"
 
 
 def test_fcode_Relational():
@@ -628,6 +637,7 @@ def test_dummy_loops():
     code = fcode(x[i], assign_to=y[i], source_format='free')
     assert code == expected
 
+
 def test_fcode_Indexed_without_looking_for_contraction():
     len_y = 5
     y = IndexedBase('y', shape=(len_y,))
@@ -636,6 +646,25 @@ def test_fcode_Indexed_without_looking_for_contraction():
     i = Idx('i', len_y-1)
     e=Eq(Dy[i], (y[i+1]-y[i])/(x[i+1]-x[i]))
     code0 = fcode(e.rhs, assign_to=e.lhs, contract=False)
+    assert code0.endswith('Dy(i) = (y(i + 1) - y(i))/(x(i + 1) - x(i))')
+
+
+def test_element_like_objects():
+    len_y = 5
+    y = ArraySymbol('y', shape=(len_y,))
+    x = ArraySymbol('x', shape=(len_y,))
+    Dy = ArraySymbol('Dy', shape=(len_y-1,))
+    i = Idx('i', len_y-1)
+    e=Eq(Dy[i], (y[i+1]-y[i])/(x[i+1]-x[i]))
+    code0 = fcode(Assignment(e.lhs, e.rhs))
+    assert code0.endswith('Dy(i) = (y(i + 1) - y(i))/(x(i + 1) - x(i))')
+
+    class ElementExpr(Element, Expr):
+        pass
+
+    e = e.subs((a, ElementExpr(a.name, a.indices)) for a in e.atoms(ArrayElement)  )
+    e=Eq(Dy[i], (y[i+1]-y[i])/(x[i+1]-x[i]))
+    code0 = fcode(Assignment(e.lhs, e.rhs))
     assert code0.endswith('Dy(i) = (y(i + 1) - y(i))/(x(i + 1) - x(i))')
 
 
@@ -751,7 +780,7 @@ def test_fcode_For():
 
     f = For(x, Range(0, 10, 2), [Assignment(y, x * y)])
     sol = fcode(f)
-    assert sol == ("      do x = 0, 10, 2\n"
+    assert sol == ("      do x = 0, 9, 2\n"
                    "         y = x*y\n"
                    "      end do")
 
@@ -829,8 +858,3 @@ def test_FunctionDefinition_print():
     # Should be changed to proper test once multi-line generation is working
     # see https://github.com/sympy/sympy/issues/15824
     raises(NotImplementedError, lambda: fcode(fd1))
-
-def test_fcode_submodule():
-    # Test the compatibility sympy.printing.fcode module imports
-    with warns_deprecated_sympy():
-        import sympy.printing.fcode # noqa:F401

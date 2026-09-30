@@ -1,4 +1,5 @@
 """Fourier Series"""
+from __future__ import annotations
 
 from sympy.core.numbers import (oo, pi)
 from sympy.core.symbol import Wild
@@ -12,8 +13,10 @@ from sympy.functions.elementary.trigonometric import sin, cos, sinc
 from sympy.series.series_class import SeriesBase
 from sympy.series.sequences import SeqFormula
 from sympy.sets.sets import Interval
-from sympy.simplify.fu import TR2, TR1, TR10, sincos_to_sum
 from sympy.utilities.iterables import is_sequence
+
+
+__doctest_requires__ = {('fourier_series',): ['matplotlib']}
 
 
 def fourier_cos_seq(func, limits, n):
@@ -106,6 +109,7 @@ def finite_check(f, x, L):
             else:
                 return False
 
+    from sympy.simplify.fu import TR2, TR1, sincos_to_sum
     _expr = sincos_to_sum(TR2(TR1(f)))
     add_coeff = _expr.as_coeff_add()
 
@@ -433,7 +437,7 @@ class FourierSeries(SeriesBase):
 
         return self.func(sfunc, self.args[1], (self.a0, an, bn))
 
-    def _eval_as_leading_term(self, x, logx=None, cdir=0):
+    def _eval_as_leading_term(self, x, logx, cdir):
         for t in self:
             if t is not S.Zero:
                 return t
@@ -513,9 +517,10 @@ class FiniteFourierSeries(FourierSeries):
         limits = sympify(limits)
         exprs = sympify(exprs)
 
-        if not (type(exprs) == Tuple and len(exprs) == 3):  # exprs is not of form (a0, an, bn)
+        if not (isinstance(exprs, Tuple) and len(exprs) == 3):  # exprs is not of form (a0, an, bn)
             # Converts the expression to fourier form
             c, e = exprs.as_coeff_add()
+            from sympy.simplify.fu import TR10
             rexpr = c + Add(*[TR10(i) for i in e])
             a0, exp_ls = rexpr.expand(trig=False, power_base=False, power_exp=False, log=False).as_coeff_add()
 
@@ -525,8 +530,8 @@ class FiniteFourierSeries(FourierSeries):
             a = Wild('a', properties=[lambda k: k.is_Integer, lambda k: k is not S.Zero, ])
             b = Wild('b', properties=[lambda k: x not in k.free_symbols, ])
 
-            an = dict()
-            bn = dict()
+            an = {}
+            bn = {}
 
             # separates the coefficients of sin and cos terms in dictionaries an, and bn
             for p in exp_ls:
@@ -644,7 +649,7 @@ def fourier_series(f, limits=None, finite=True):
     not throughout the whole real line.
 
     This also brings a lot of ease for the computation because
-    you don't have to make $f(x)$ artificially periodic by
+    you do not have to make $f(x)$ artificially periodic by
     wrapping it with piecewise, modulo operations,
     but you can shape the function to look like the desired periodic
     function only in the interval $(a, b)$, and the computed series will

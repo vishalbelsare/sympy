@@ -1,7 +1,10 @@
+from __future__ import annotations
+from typing import Iterator, Any, TypeVar
 from sympy.core import Basic, Integer
 
 import random
 
+T = TypeVar('T')
 
 class GrayCode(Basic):
     """
@@ -27,7 +30,7 @@ class GrayCode(Basic):
     Examples
     ========
 
-    >>> from sympy.combinatorics.graycode import GrayCode
+    >>> from sympy.combinatorics import GrayCode
     >>> a = GrayCode(3)
     >>> list(a.generate_gray())
     ['000', '001', '011', '010', '110', '111', '101', '100']
@@ -51,7 +54,7 @@ class GrayCode(Basic):
     _current = 0
     _rank = None
 
-    def __new__(cls, n, *args, **kw_args):
+    def __new__(cls: type[GrayCode], n: int, *args: Any, **kw_args: Any) -> GrayCode:
         """
         Default constructor.
 
@@ -62,7 +65,7 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(3)
         >>> a
         GrayCode(3)
@@ -99,7 +102,7 @@ class GrayCode(Basic):
             obj._current = obj.unrank(n, obj._rank)
         return obj
 
-    def next(self, delta=1):
+    def next(self, delta: int = 1) -> GrayCode:
         """
         Returns the Gray code a distance ``delta`` (default = 1) from the
         current value in canonical order.
@@ -108,7 +111,7 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(3, start='110')
         >>> a.next().current
         '111'
@@ -125,7 +128,7 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(3)
         >>> a.selections
         8
@@ -140,21 +143,21 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(5)
         >>> a.n
         5
         """
         return self.args[0]
 
-    def generate_gray(self, **hints):
+    def generate_gray(self, **hints: Any) -> Iterator[str]:
         """
         Generates the sequence of bit vectors of a Gray Code.
 
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(3)
         >>> list(a.generate_gray())
         ['000', '001', '011', '010', '110', '111', '101', '100']
@@ -207,7 +210,7 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(3)
         >>> for i in a.generate_gray():
         ...     if i == '010':
@@ -244,7 +247,7 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> a = GrayCode(3)
         >>> list(a.generate_gray())
         ['000', '001', '011', '010', '110', '111', '101', '100']
@@ -261,7 +264,7 @@ class GrayCode(Basic):
         References
         ==========
 
-        .. [1] http://statweb.stanford.edu/~susan/courses/s208/node12.html
+        .. [1] https://web.archive.org/web/20200224064753/http://statweb.stanford.edu/~susan/courses/s208/node12.html
 
         """
         if self._rank is None:
@@ -276,17 +279,17 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> GrayCode(3, start='100').current
         '100'
         """
         rv = self._current or '0'
         if not isinstance(rv, str):
-            rv = bin(rv)[2:]
+            rv = f'{rv:b}'
         return rv.rjust(self.n, '0')
 
     @classmethod
-    def unrank(self, n, rank):
+    def unrank(cls, n: int | Basic, rank: int) -> str:
         """
         Unranks an n-bit sized Gray code of rank k. This method exists
         so that a derivative GrayCode class can define its own code of
@@ -298,7 +301,7 @@ class GrayCode(Basic):
         Examples
         ========
 
-        >>> from sympy.combinatorics.graycode import GrayCode
+        >>> from sympy.combinatorics import GrayCode
         >>> GrayCode(5, rank=3).current
         '00010'
         >>> GrayCode.unrank(5, 3)
@@ -319,7 +322,7 @@ class GrayCode(Basic):
         return _unrank(rank, n)
 
 
-def random_bitstring(n):
+def random_bitstring(n: int) -> str:
     """
     Generates a random bitlist of length n.
 
@@ -333,7 +336,7 @@ def random_bitstring(n):
     return ''.join([random.choice('01') for i in range(n)])
 
 
-def gray_to_bin(bin_list):
+def gray_to_bin(bin_list: str) -> str:
     """
     Convert from Gray coding to binary coding.
 
@@ -357,7 +360,7 @@ def gray_to_bin(bin_list):
     return ''.join(b)
 
 
-def bin_to_gray(bin_list):
+def bin_to_gray(bin_list: str) -> str:
     """
     Convert from binary coding to gray coding.
 
@@ -381,7 +384,7 @@ def bin_to_gray(bin_list):
     return ''.join(b)
 
 
-def get_subset_from_bitstring(super_set, bitstring):
+def get_subset_from_bitstring(super_set: list[T], bitstring: str) -> list[T]:
     """
     Gets the subset defined by the bitstring.
 
@@ -405,7 +408,7 @@ def get_subset_from_bitstring(super_set, bitstring):
             if bitstring[i] == '1']
 
 
-def graycode_subsets(gray_code_set):
+def graycode_subsets(gray_code_set: list[T]) -> Iterator[list[T]]:
     """
     Generates the subsets as enumerated by a Gray code.
 

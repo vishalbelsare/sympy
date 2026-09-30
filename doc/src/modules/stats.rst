@@ -44,6 +44,7 @@ Continuous Types
 .. autofunction:: ChiNoncentral
 .. autofunction:: ChiSquared
 .. autofunction:: Dagum
+.. autofunction:: Davis
 .. autofunction:: Erlang
 .. autofunction:: ExGaussian
 .. autofunction:: Exponential
@@ -73,6 +74,7 @@ Continuous Types
 .. autofunction:: Reciprocal
 .. autofunction:: StudentT
 .. autofunction:: ShiftedGompertz
+.. autofunction:: SkewNormal
 .. autofunction:: Trapezoidal
 .. autofunction:: Triangular
 .. autofunction:: Uniform
@@ -97,6 +99,8 @@ Joint Types
 .. autofunction:: MultivariateT
 .. autofunction:: NegativeMultinomial
 .. autofunction:: NormalGamma
+
+.. _sympy-stats-stochastic-processes:
 
 Stochastic Processes
 --------------------
@@ -146,6 +150,7 @@ Interface
 .. autofunction:: coskewness
 .. autofunction:: median
 .. autofunction:: std
+.. autofunction:: quantile
 .. autofunction:: sample
 .. autofunction:: sample_iter
 .. autofunction:: factorial_moment

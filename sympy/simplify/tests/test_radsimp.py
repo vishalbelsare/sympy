@@ -1,3 +1,4 @@
+from __future__ import annotations
 from sympy.core.add import Add
 from sympy.core.function import (Derivative, Function, diff)
 from sympy.core.mul import Mul
@@ -159,6 +160,14 @@ def test_radsimp():
     eq = sqrt(x)/y**2
     assert radsimp(eq) == eq
 
+    # handle non-Expr args
+    from sympy.integrals.integrals import Integral
+    eq = Integral(x/(sqrt(2) - 1), (x, 0, 1/(sqrt(2) + 1)))
+    assert radsimp(eq) == Integral((sqrt(2) + 1)*x , (x, 0, sqrt(2) - 1))
+
+    from sympy.sets import FiniteSet
+    eq = FiniteSet(x/(sqrt(2) - 1))
+    assert radsimp(eq) == FiniteSet((sqrt(2) + 1)*x)
 
 def test_radsimp_issue_3214():
     c, p = symbols('c p', positive=True)
@@ -168,7 +177,7 @@ def test_radsimp_issue_3214():
 
 
 def test_collect_1():
-    """Collect with respect to a Symbol"""
+    """Collect with respect to Symbol"""
     x, y, z, n = symbols('x,y,z,n')
     assert collect(1, x) == 1
     assert collect( x + y*x, x ) == x * (1 + y)
@@ -184,6 +193,11 @@ def test_collect_1():
     # symbols can be given as any iterable
     expr = x + y
     assert collect(expr, expr.free_symbols) == expr
+    assert collect(x*exp(x) + sin(x)*y + sin(x)*2 + 3*x, x, exact=None
+        ) == x*exp(x) + 3*x + (y + 2)*sin(x)
+    assert collect(x*exp(x) + sin(x)*y + sin(x)*2 + 3*x + y*x +
+        y*x*exp(x), x, exact=None
+        ) == x*exp(x)*(y + 1) + (3 + y)*x + (y + 2)*sin(x)
 
 
 def test_collect_2():
@@ -430,6 +444,9 @@ def test_fraction():
     assert fraction(m) == (1, 4)
     assert fraction(m, exact=True) == \
             (Mul(1, 1, evaluate=False), Mul(2, 2, 1, evaluate=False))
+
+    u = Pow(2, -2, evaluate=False)
+    assert fraction(u, exact=True) == (1, Pow(2, 2, evaluate=False))
 
 
 def test_issue_5615():
