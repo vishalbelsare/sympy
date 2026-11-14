@@ -67,4 +67,3 @@ def test_nonspecial_negative_powers_remain_powers():
     assert ccode(expr) == 'x/pow(y, -2)'
     assert julia_code(expr) == 'x ./ y .^ (-2)'
     assert octave_code(expr) == 'x./y.^(-2)'
-
